@@ -501,13 +501,23 @@ End Function
 Private Sub ClearDirectFormattingInStoryChain(ByVal storyRng As Range)
 
     Dim rng As Range
+    Dim para As Paragraph
     Set rng = storyRng
 
     Do While Not rng Is Nothing
-        On Error Resume Next
-        rng.ClearCharacterDirectFormatting
-        rng.ClearParagraphDirectFormatting
-        On Error GoTo 0
+        ' Word version compatibility:
+        ' Some builds do not expose ClearCharacterDirectFormatting on Range.
+        ' Reset direct formatting paragraph-by-paragraph and skip table cells
+        ' so table borders/shading are preserved for the table-style step.
+        For Each para In rng.Paragraphs
+            On Error Resume Next
+            If Not para.Range.Information(wdWithInTable) Then
+                para.Range.Font.Reset
+                para.Range.ParagraphFormat.Reset
+            End If
+            On Error GoTo 0
+        Next para
+
         Set rng = rng.NextStoryRange
     Loop
 
