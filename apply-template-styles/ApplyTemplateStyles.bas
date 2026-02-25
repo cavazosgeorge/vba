@@ -84,7 +84,9 @@ Public Sub ApplyTemplateStyles()
     ' --- 3. Count styles before (for summary) ---
     styleCountBefore = doc.Styles.Count
 
-    ' --- 4. Open template and copy styles, headers/footers, page setup ---
+    ' --- 4. Open template ---
+    Dim currentStep As String
+    currentStep = "Opening template"
     On Error GoTo ErrHandler
 
     Dim tmplDoc As Document
@@ -96,6 +98,7 @@ Public Sub ApplyTemplateStyles()
 
     ' --- 5. Copy all styles from template using OrganizerCopy ---
     ' Works with .docx, .dotx, and .dotm — no AttachedTemplate needed
+    currentStep = "Copying styles"
     Dim stylesCopied As Long
     Dim s As Style
     For Each s In tmplDoc.Styles
@@ -113,9 +116,13 @@ Public Sub ApplyTemplateStyles()
     On Error GoTo ErrHandler
 
     ' --- 6. Copy headers, footers, and page setup directly from open template ---
+    currentStep = "Copying headers/footers"
     headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
+
+    currentStep = "Copying page setup"
     pageSetupCopied = CopyPageSetupFromDoc(doc, tmplDoc)
 
+    currentStep = "Closing template"
     tmplDoc.Close SaveChanges:=False
     Set tmplDoc = Nothing
 
@@ -165,10 +172,16 @@ Public Sub ApplyTemplateStyles()
     Exit Sub
 
 ErrHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
     On Error Resume Next
     If Not tmplDoc Is Nothing Then tmplDoc.Close SaveChanges:=False
     On Error GoTo 0
-    MsgBox "Error " & Err.Number & ": " & Err.Description & vbCrLf & vbCrLf & _
+    MsgBox "Error " & errNum & ": " & errDesc & vbCrLf & _
+           "Step: " & currentStep & vbCrLf & vbCrLf & _
+           "Template: " & templatePath & vbCrLf & _
            "Your backup is safe at:" & vbCrLf & backupPath, _
            vbCritical, "Apply Template Styles - Error"
 End Sub
