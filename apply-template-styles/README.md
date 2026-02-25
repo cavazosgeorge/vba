@@ -5,7 +5,7 @@ A VBA macro that copies header/footer content, syncs header/footer font type, ap
 ## What It Does
 
 1. **Creates a timestamped backup** of your document before making any changes
-2. **Copies headers and footers** from the template (Primary, First Page, and Even Pages variants)
+2. **Copies headers and footers exactly** from the template (content + formatting + spacing for Primary, First Page, and Even Pages variants)
 3. **Syncs header/footer font type** from template to target
 4. **Sets text font family** in the target document to the template's `Normal` style font
 5. **Sets text color to black** in the target document body text (including notes/comments/text boxes)

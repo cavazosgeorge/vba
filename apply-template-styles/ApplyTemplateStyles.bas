@@ -1,8 +1,9 @@
 ' =============================================================================
 ' ApplyTemplateStyles - Copy Headers/Footers + Black Text + Table Header Format
 ' =============================================================================
-' Copies header/footer content, forces text color to black, and applies the
-' same table header formatting to all tables in the active document.
+' Copies header/footer content, syncs header/footer font type, applies body
+' font from template, forces text color to black, and applies the same table
+' header formatting to all tables in the active document.
 ' Creates a timestamped backup before making changes.
 '
 ' IMPORTANT: Open BOTH documents in Word before running:
@@ -80,6 +81,8 @@ Public Sub ApplyTemplateStyles()
     currentStep = "Copying headers/footers"
     On Error GoTo ErrHandler
     headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
+
+    currentStep = "Syncing header/footer font"
     headerFooterFontsSynced = SyncHeaderFooterFonts(doc, tmplDoc)
 
     ' --- 4. Set target document text font from template ---
@@ -111,8 +114,8 @@ Public Sub ApplyTemplateStyles()
     summary = "Template formatting applied successfully." & vbCrLf & vbCrLf
     summary = summary & "Template:        " & tmplDoc.Name & vbCrLf
     summary = summary & "Backup:          " & backupPath & vbCrLf
-    summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
-    summary = summary & "H/F font type:   " & IIf(headerFooterFontsSynced, "Synced from template", "Skipped (error)") & vbCrLf
+    summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied (exact)", "Skipped (error or no sections)") & vbCrLf
+    summary = summary & "H/F style/font:  " & IIf(headerFooterFontsSynced, "Synced from template", "Skipped (error)") & vbCrLf
     If Len(templateFontName) > 0 Then
         summary = summary & "Text font:       " & IIf(fontSetFromTemplate, "Set", "Skipped (error)") & " (""" & templateFontName & """)" & vbCrLf
     Else
@@ -433,25 +436,23 @@ Private Function CopyHeadersFootersFromDoc(doc As Document, tmplDoc As Document)
     hfTypes = Array(wdHeaderFooterPrimary, wdHeaderFooterFirstPage, wdHeaderFooterEvenPages)
 
     For i = 1 To sectionCount
-        doc.Sections(i).PageSetup.DifferentFirstPageHeaderFooter = _
-            tmplDoc.Sections(i).PageSetup.DifferentFirstPageHeaderFooter
-        doc.Sections(i).PageSetup.OddAndEvenPagesHeaderFooter = _
-            tmplDoc.Sections(i).PageSetup.OddAndEvenPagesHeaderFooter
+        With doc.Sections(i).PageSetup
+            .DifferentFirstPageHeaderFooter = tmplDoc.Sections(i).PageSetup.DifferentFirstPageHeaderFooter
+            .OddAndEvenPagesHeaderFooter = tmplDoc.Sections(i).PageSetup.OddAndEvenPagesHeaderFooter
+            .HeaderDistance = tmplDoc.Sections(i).PageSetup.HeaderDistance
+            .FooterDistance = tmplDoc.Sections(i).PageSetup.FooterDistance
+        End With
 
         For Each hfType In hfTypes
-            If tmplDoc.Sections(i).Headers(hfType).Exists Then
-                tmplDoc.Sections(i).Headers(hfType).Range.Copy
-                doc.Sections(i).Headers(hfType).Range.Paste
-                doc.Sections(i).Headers(hfType).LinkToPrevious = _
-                    tmplDoc.Sections(i).Headers(hfType).LinkToPrevious
-            End If
+            CopyHeaderFooterExact _
+                sourceHF:=tmplDoc.Sections(i).Headers(hfType), _
+                targetHF:=doc.Sections(i).Headers(hfType), _
+                hasPreviousSection:=(i > 1)
 
-            If tmplDoc.Sections(i).Footers(hfType).Exists Then
-                tmplDoc.Sections(i).Footers(hfType).Range.Copy
-                doc.Sections(i).Footers(hfType).Range.Paste
-                doc.Sections(i).Footers(hfType).LinkToPrevious = _
-                    tmplDoc.Sections(i).Footers(hfType).LinkToPrevious
-            End If
+            CopyHeaderFooterExact _
+                sourceHF:=tmplDoc.Sections(i).Footers(hfType), _
+                targetHF:=doc.Sections(i).Footers(hfType), _
+                hasPreviousSection:=(i > 1)
         Next hfType
     Next i
 
@@ -464,68 +465,71 @@ End Function
 
 
 ' =============================================================================
+' Helper: copy one header/footer story exactly, preserving link behavior.
+' =============================================================================
+Private Sub CopyHeaderFooterExact( _
+    ByVal sourceHF As HeaderFooter, _
+    ByVal targetHF As HeaderFooter, _
+    ByVal hasPreviousSection As Boolean)
+
+    On Error Resume Next
+
+    ' If template is linked to previous (and previous exists), keep it linked.
+    If hasPreviousSection And sourceHF.LinkToPrevious Then
+        targetHF.LinkToPrevious = True
+        Exit Sub
+    End If
+
+    targetHF.LinkToPrevious = False
+
+    If sourceHF.Exists Then
+        Dim sourceRng As Range
+        Dim targetRng As Range
+        Set sourceRng = sourceHF.Range.Duplicate
+        Set targetRng = targetHF.Range.Duplicate
+
+        ' FormattedText copies content + formatting without clipboard paste artifacts.
+        targetRng.FormattedText = sourceRng.FormattedText
+    End If
+
+End Sub
+
+
+' =============================================================================
 ' Helper: synchronize header/footer font type from template to target.
 ' =============================================================================
 Private Function SyncHeaderFooterFonts(doc As Document, tmplDoc As Document) As Boolean
 
     On Error GoTo HFFontError
 
-    On Error Resume Next
-    doc.Styles(wdStyleHeader).Font.Name = tmplDoc.Styles(wdStyleHeader).Font.Name
-    doc.Styles(wdStyleFooter).Font.Name = tmplDoc.Styles(wdStyleFooter).Font.Name
-    Err.Clear
-    On Error GoTo HFFontError
+    Dim headerStyleName As String
+    Dim footerStyleName As String
 
-    Dim sectionCount As Long
-    sectionCount = tmplDoc.Sections.Count
-    If sectionCount > doc.Sections.Count Then
-        sectionCount = doc.Sections.Count
+    headerStyleName = tmplDoc.Styles(wdStyleHeader).NameLocal
+    footerStyleName = tmplDoc.Styles(wdStyleFooter).NameLocal
+
+    On Error Resume Next
+    If Len(headerStyleName) > 0 Then
+        Application.OrganizerCopy _
+            Source:=tmplDoc.FullName, _
+            Destination:=doc.FullName, _
+            Name:=headerStyleName, _
+            Object:=wdOrganizerObjectStyles
     End If
 
-    Dim i As Long
-    Dim hfType As Variant
-    Dim hfTypes As Variant
-    Dim sourceName As String
-    hfTypes = Array(wdHeaderFooterPrimary, wdHeaderFooterFirstPage, wdHeaderFooterEvenPages)
-
-    For i = 1 To sectionCount
-        For Each hfType In hfTypes
-            If tmplDoc.Sections(i).Headers(hfType).Exists And doc.Sections(i).Headers(hfType).Exists Then
-                sourceName = GetRangeFontName(tmplDoc.Sections(i).Headers(hfType).Range)
-                If Len(sourceName) > 0 Then
-                    doc.Sections(i).Headers(hfType).Range.Font.Name = sourceName
-                End If
-            End If
-
-            If tmplDoc.Sections(i).Footers(hfType).Exists And doc.Sections(i).Footers(hfType).Exists Then
-                sourceName = GetRangeFontName(tmplDoc.Sections(i).Footers(hfType).Range)
-                If Len(sourceName) > 0 Then
-                    doc.Sections(i).Footers(hfType).Range.Font.Name = sourceName
-                End If
-            End If
-        Next hfType
-    Next i
+    If Len(footerStyleName) > 0 Then
+        Application.OrganizerCopy _
+            Source:=tmplDoc.FullName, _
+            Destination:=doc.FullName, _
+            Name:=footerStyleName, _
+            Object:=wdOrganizerObjectStyles
+    End If
+    Err.Clear
+    On Error GoTo HFFontError
 
     SyncHeaderFooterFonts = True
     Exit Function
 
 HFFontError:
     SyncHeaderFooterFonts = False
-End Function
-
-
-' =============================================================================
-' Helper: safely resolve a usable font name from a range.
-' =============================================================================
-Private Function GetRangeFontName(rng As Range) As String
-
-    On Error Resume Next
-
-    GetRangeFontName = Trim$(rng.Font.Name)
-    If Len(GetRangeFontName) > 0 Then Exit Function
-
-    If rng.Characters.Count > 0 Then
-        GetRangeFontName = Trim$(rng.Characters(1).Font.Name)
-    End If
-
 End Function
