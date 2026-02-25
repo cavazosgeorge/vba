@@ -1,48 +1,48 @@
 ' =============================================================================
-' ApplyTemplateStyles - Attach Template & Update Styles Macro
+' ApplyTemplateStyles - Copy Styles, Headers/Footers & Page Setup from Template
 ' =============================================================================
-' Attaches a .dotx/.dotm template to the active document, updates all styles
-' to match the template, copies headers/footers and page setup from the
-' template, rebuilds TOC if present, and creates a timestamped backup
-' before making any changes.
+' Copies all styles, headers/footers, and page layout from a template document
+' into the active document. Creates a timestamped backup before making changes.
+'
+' IMPORTANT: Open BOTH documents in Word before running:
+'   1. Your target document (the one you want to format)
+'   2. Your template document (the one with the correct formatting)
 '
 ' Usage:
-'   1. Open your tech document in Word
-'   2. Run the macro (Alt+F8 > ApplyTemplateStyles > Run)
-'   3. Select your template file when prompted
-'   4. Review the summary dialog
+'   1. Open both documents in Word
+'   2. Click into your TARGET document (make it the active window)
+'   3. Run the macro (Alt+F8 > ApplyTemplateStyles > Run)
+'   4. Select your template from the list of open documents
+'   5. Review the summary dialog
 '
 ' To install:
 '   - Open Word > Alt+F11 > Insert > Module > Paste this code
-'   - Or save as a .dotm add-in in your Word STARTUP folder
+'   - Or save into Normal.dotm for access from any document
 ' =============================================================================
 
 Option Explicit
 
-' ---- Configuration ----
-' Set this to your template's full path to skip the file picker every time.
-' Leave empty ("") to be prompted each run.
-Private Const DEFAULT_TEMPLATE_PATH As String = ""
-
 ' Set to True to disable "auto update styles on open" after applying.
-' Recommended True to prevent unintended changes when opening the doc later.
 Private Const DISABLE_AUTO_UPDATE As Boolean = True
 
 Public Sub ApplyTemplateStyles()
 
     Dim doc As Document
-    Dim templatePath As String
+    Dim tmplDoc As Document
     Dim backupPath As String
     Dim styleCountBefore As Long
+    Dim stylesCopied As Long
     Dim tocCount As Long
     Dim tocUpdated As Boolean
     Dim headersFootersCopied As Boolean
     Dim pageSetupCopied As Boolean
     Dim startTime As Single
+    Dim currentStep As String
 
-    ' --- Guard: make sure a document is open ---
-    If Documents.Count = 0 Then
-        MsgBox "No document is open. Please open a document first.", _
+    ' --- Guard: need at least 2 documents open ---
+    If Documents.Count < 2 Then
+        MsgBox "Please open BOTH your target document and your template document in Word before running this macro." & vbCrLf & vbCrLf & _
+               "Currently open: " & Documents.Count & " document(s)", _
                vbExclamation, "Apply Template Styles"
         Exit Sub
     End If
@@ -50,7 +50,7 @@ Public Sub ApplyTemplateStyles()
     Set doc = ActiveDocument
     startTime = Timer
 
-    ' --- Guard: document must be saved at least once (so we know where to put the backup) ---
+    ' --- Guard: document must be saved at least once ---
     If Len(doc.Path) = 0 Then
         MsgBox "This document has never been saved." & vbCrLf & _
                "Please save it first so a backup can be created.", _
@@ -58,16 +58,9 @@ Public Sub ApplyTemplateStyles()
         Exit Sub
     End If
 
-    ' --- 1. Pick the template ---
-    templatePath = ResolveTemplatePath()
-    If Len(templatePath) = 0 Then Exit Sub  ' user cancelled
-
-    ' Validate the template file exists
-    If Dir(templatePath) = "" Then
-        MsgBox "Template file not found:" & vbCrLf & templatePath, _
-               vbCritical, "Apply Template Styles"
-        Exit Sub
-    End If
+    ' --- 1. Pick the template from open documents ---
+    Set tmplDoc = PickTemplateFromOpenDocs(doc)
+    If tmplDoc Is Nothing Then Exit Sub  ' user cancelled
 
     ' --- 2. Create timestamped backup ---
     Dim backupError As String
@@ -84,28 +77,21 @@ Public Sub ApplyTemplateStyles()
     ' --- 3. Count styles before (for summary) ---
     styleCountBefore = doc.Styles.Count
 
-    ' --- 4. Open template ---
-    Dim currentStep As String
-    currentStep = "Opening template"
+    ' --- 4. Copy all styles from template using OrganizerCopy ---
+    currentStep = "Copying styles"
     On Error GoTo ErrHandler
 
-    Dim tmplDoc As Document
-    Set tmplDoc = Documents.Open( _
-        FileName:=templatePath, _
-        ReadOnly:=True, _
-        AddToRecentFiles:=False, _
-        Visible:=False)
+    Dim tmplPath As String
+    Dim docPath As String
+    tmplPath = tmplDoc.FullName
+    docPath = doc.FullName
 
-    ' --- 5. Copy all styles from template using OrganizerCopy ---
-    ' Works with .docx, .dotx, and .dotm — no AttachedTemplate needed
-    currentStep = "Copying styles"
-    Dim stylesCopied As Long
     Dim s As Style
     For Each s In tmplDoc.Styles
         On Error Resume Next
         Application.OrganizerCopy _
-            Source:=templatePath, _
-            Destination:=doc.FullName, _
+            Source:=tmplPath, _
+            Destination:=docPath, _
             Name:=s.NameLocal, _
             Object:=wdOrganizerObjectStyles
         If Err.Number = 0 Then
@@ -115,23 +101,20 @@ Public Sub ApplyTemplateStyles()
     Next s
     On Error GoTo ErrHandler
 
-    ' --- 6. Copy headers, footers, and page setup directly from open template ---
+    ' --- 5. Copy headers, footers, and page setup ---
     currentStep = "Copying headers/footers"
     headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
 
     currentStep = "Copying page setup"
     pageSetupCopied = CopyPageSetupFromDoc(doc, tmplDoc)
 
-    currentStep = "Closing template"
-    tmplDoc.Close SaveChanges:=False
-    Set tmplDoc = Nothing
-
-    ' --- 7. Optionally disable auto-update on open ---
+    ' --- 6. Optionally disable auto-update on open ---
     If DISABLE_AUTO_UPDATE Then
         doc.UpdateStylesOnOpen = False
     End If
 
-    ' --- 8. Rebuild Table of Contents if present ---
+    ' --- 7. Rebuild Table of Contents if present ---
+    currentStep = "Rebuilding TOC"
     tocCount = doc.TablesOfContents.Count
     If tocCount > 0 Then
         Dim toc As TableOfContents
@@ -141,22 +124,22 @@ Public Sub ApplyTemplateStyles()
         tocUpdated = True
     End If
 
-    ' --- 9. Update all fields (page numbers, cross-refs, etc.) ---
+    ' --- 8. Update all fields (page numbers, cross-refs, etc.) ---
+    currentStep = "Updating fields"
     doc.Fields.Update
 
-    ' --- 10. Summary ---
+    ' --- 9. Summary ---
     Dim elapsed As Single
     elapsed = Timer - startTime
 
     Dim summary As String
     summary = "Template styles applied successfully." & vbCrLf & vbCrLf
-    summary = summary & "Template:  " & templatePath & vbCrLf
-    summary = summary & "Backup:    " & backupPath & vbCrLf
+    summary = summary & "Template:        " & tmplDoc.Name & vbCrLf
+    summary = summary & "Backup:          " & backupPath & vbCrLf
     summary = summary & "Styles copied:   " & stylesCopied & vbCrLf
     summary = summary & "Styles in doc:   " & doc.Styles.Count & vbCrLf
-
-    summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied from template", "Skipped (error or no sections)") & vbCrLf
-    summary = summary & "Page setup:      " & IIf(pageSetupCopied, "Copied from template", "Skipped (error or no sections)") & vbCrLf
+    summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
+    summary = summary & "Page setup:      " & IIf(pageSetupCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
 
     If tocUpdated Then
         summary = summary & "TOC rebuilt:     Yes (" & tocCount & " found)" & vbCrLf
@@ -165,7 +148,7 @@ Public Sub ApplyTemplateStyles()
     End If
 
     summary = summary & "Fields updated:  Yes" & vbCrLf
-    summary = summary & "Auto-update on open: " & IIf(DISABLE_AUTO_UPDATE, "Disabled", "Left unchanged") & vbCrLf
+    summary = summary & "Auto-update:     " & IIf(DISABLE_AUTO_UPDATE, "Disabled", "Left unchanged") & vbCrLf
     summary = summary & vbCrLf & "Elapsed: " & Format(elapsed, "0.0") & "s"
 
     MsgBox summary, vbInformation, "Apply Template Styles - Done"
@@ -177,91 +160,100 @@ ErrHandler:
     errNum = Err.Number
     errDesc = Err.Description
     On Error Resume Next
-    If Not tmplDoc Is Nothing Then tmplDoc.Close SaveChanges:=False
     On Error GoTo 0
     MsgBox "Error " & errNum & ": " & errDesc & vbCrLf & _
            "Step: " & currentStep & vbCrLf & vbCrLf & _
-           "Template: " & templatePath & vbCrLf & _
            "Your backup is safe at:" & vbCrLf & backupPath, _
            vbCritical, "Apply Template Styles - Error"
 End Sub
 
 
 ' =============================================================================
-' Helper: Resolve the template path (default constant or file picker)
+' Helper: Show a dialog listing all open documents (except the active one)
+' and let the user pick which one is the template. Returns Nothing if cancelled.
 ' =============================================================================
-Private Function ResolveTemplatePath() As String
+Private Function PickTemplateFromOpenDocs(activeDoc As Document) As Document
 
-    Dim p As String
+    ' Build a list of open documents (excluding the active one)
+    Dim docNames() As String
+    Dim docRefs() As Document
+    Dim count As Long
+    count = 0
 
-    ' Use the hardcoded default if set
-    If Len(DEFAULT_TEMPLATE_PATH) > 0 Then
-        ResolveTemplatePath = DEFAULT_TEMPLATE_PATH
+    Dim d As Document
+    For Each d In Documents
+        If d.FullName <> activeDoc.FullName Then
+            count = count + 1
+            ReDim Preserve docNames(1 To count)
+            ReDim Preserve docRefs(1 To count)
+            docNames(count) = d.Name
+            Set docRefs(count) = d
+        End If
+    Next d
+
+    If count = 0 Then
+        MsgBox "No other documents are open to use as a template." & vbCrLf & _
+               "Please open your template document first.", _
+               vbExclamation, "Apply Template Styles"
+        Set PickTemplateFromOpenDocs = Nothing
         Exit Function
     End If
 
-    ' Otherwise show a file picker filtered to Word templates
-    With Application.FileDialog(msoFileDialogFilePicker)
-        .Title = "Select Your Template (.docx, .dotx, or .dotm)"
-        .Filters.Clear
-        .Filters.Add "Word Documents & Templates", "*.docx; *.dotx; *.dotm"
-        .Filters.Add "All Files", "*.*"
-        .AllowMultiSelect = False
-
-        If .Show = -1 Then
-            ResolveTemplatePath = DecodeFilePath(.SelectedItems(1))
+    ' If only one other doc is open, confirm it
+    If count = 1 Then
+        Dim answer As VbMsgBoxResult
+        answer = MsgBox("Use """ & docNames(1) & """ as the template?" & vbCrLf & vbCrLf & _
+                        "This will copy its styles, headers/footers, and page setup into:" & vbCrLf & _
+                        """" & activeDoc.Name & """", _
+                        vbYesNo + vbQuestion, "Apply Template Styles")
+        If answer = vbYes Then
+            Set PickTemplateFromOpenDocs = docRefs(1)
         Else
-            ResolveTemplatePath = ""  ' user cancelled
+            Set PickTemplateFromOpenDocs = Nothing
         End If
-    End With
+        Exit Function
+    End If
 
-End Function
+    ' Multiple docs open — build a numbered list and ask
+    Dim prompt As String
+    prompt = "Which open document is your template?" & vbCrLf & vbCrLf
+    prompt = prompt & "Styles will be copied INTO: """ & activeDoc.Name & """" & vbCrLf
+    prompt = prompt & "Styles will be copied FROM the document you choose:" & vbCrLf & vbCrLf
 
-
-' =============================================================================
-' Helper: Decode URL-encoded file paths returned by FileDialog.
-' OneDrive/SharePoint synced folders can return URL-style paths with %20, %23,
-' etc. or even full https:// URLs. This converts them to local paths.
-' =============================================================================
-Private Function DecodeFilePath(ByVal rawPath As String) As String
-
-    Dim result As String
-    result = rawPath
-
-    ' Strip URL-encoded characters (%XX -> character)
     Dim i As Long
-    Dim decoded As String
-    decoded = ""
-    i = 1
-    Do While i <= Len(result)
-        If Mid(result, i, 1) = "%" And i + 2 <= Len(result) Then
-            Dim hexVal As String
-            hexVal = Mid(result, i + 1, 2)
-            On Error Resume Next
-            decoded = decoded & Chr(CLng("&H" & hexVal))
-            If Err.Number <> 0 Then
-                decoded = decoded & Mid(result, i, 3)
-                Err.Clear
-            End If
-            On Error GoTo 0
-            i = i + 3
-        Else
-            decoded = decoded & Mid(result, i, 1)
-            i = i + 1
-        End If
-    Loop
-    result = decoded
+    For i = 1 To count
+        prompt = prompt & "  " & i & ". " & docNames(i) & vbCrLf
+    Next i
 
-    ' Convert forward slashes to backslashes (URL-style paths)
-    result = Replace(result, "/", "\")
+    prompt = prompt & vbCrLf & "Enter the number (1-" & count & "):"
 
-    DecodeFilePath = result
+    Dim choice As String
+    choice = InputBox(prompt, "Apply Template Styles - Select Template")
+
+    If Len(choice) = 0 Then
+        Set PickTemplateFromOpenDocs = Nothing
+        Exit Function
+    End If
+
+    Dim choiceNum As Long
+    On Error Resume Next
+    choiceNum = CLng(choice)
+    On Error GoTo 0
+
+    If choiceNum < 1 Or choiceNum > count Then
+        MsgBox "Invalid selection. Please run the macro again.", _
+               vbExclamation, "Apply Template Styles"
+        Set PickTemplateFromOpenDocs = Nothing
+        Exit Function
+    End If
+
+    Set PickTemplateFromOpenDocs = docRefs(choiceNum)
 
 End Function
 
 
 ' =============================================================================
-' Helper: Create a timestamped backup of the document
+' Helper: Create a timestamped backup of the document.
 ' Returns the backup file path, or "" on failure.
 ' =============================================================================
 Private Function CreateBackup(doc As Document, ByRef outError As String) As String
@@ -280,11 +272,10 @@ Private Function CreateBackup(doc As Document, ByRef outError As String) As Stri
     timestamp = Format(Now, "yyyy-MM-dd_HHmmss")
     backupName = baseName & "_backup_" & timestamp & ext
 
-    ' Try SaveCopyAs first, fall back to SaveAs2 if unavailable
-    ' (SaveCopyAs was renamed/removed in some Word versions)
     Dim backupFullPath As String
     backupFullPath = folder & backupName
 
+    ' Try SaveCopyAs first, fall back to SaveAs2 if unavailable
     On Error Resume Next
     doc.SaveCopyAs backupFullPath
     If Err.Number <> 0 Then
@@ -310,8 +301,7 @@ End Function
 
 ' =============================================================================
 ' Helper: Copy headers and footers from an already-open template document.
-' Matches sections by index — if the doc has more sections than the template,
-' extra sections keep their existing headers/footers. Returns True on success.
+' Matches sections by index. Returns True on success.
 ' =============================================================================
 Private Function CopyHeadersFootersFromDoc(doc As Document, tmplDoc As Document) As Boolean
 
@@ -329,29 +319,22 @@ Private Function CopyHeadersFootersFromDoc(doc As Document, tmplDoc As Document)
     hfTypes = Array(wdHeaderFooterPrimary, wdHeaderFooterFirstPage, wdHeaderFooterEvenPages)
 
     For i = 1 To sectionCount
-        ' Match the "Different First Page" and "Different Odd & Even" settings
         doc.Sections(i).PageSetup.DifferentFirstPageHeaderFooter = _
             tmplDoc.Sections(i).PageSetup.DifferentFirstPageHeaderFooter
         doc.Sections(i).PageSetup.OddAndEvenPagesHeaderFooter = _
             tmplDoc.Sections(i).PageSetup.OddAndEvenPagesHeaderFooter
 
         For Each hfType In hfTypes
-            ' Copy headers
             If tmplDoc.Sections(i).Headers(hfType).Exists Then
                 tmplDoc.Sections(i).Headers(hfType).Range.Copy
                 doc.Sections(i).Headers(hfType).Range.Paste
-
-                ' Preserve "Link to Previous" setting
                 doc.Sections(i).Headers(hfType).LinkToPrevious = _
                     tmplDoc.Sections(i).Headers(hfType).LinkToPrevious
             End If
 
-            ' Copy footers
             If tmplDoc.Sections(i).Footers(hfType).Exists Then
                 tmplDoc.Sections(i).Footers(hfType).Range.Copy
                 doc.Sections(i).Footers(hfType).Range.Paste
-
-                ' Preserve "Link to Previous" setting
                 doc.Sections(i).Footers(hfType).LinkToPrevious = _
                     tmplDoc.Sections(i).Footers(hfType).LinkToPrevious
             End If
@@ -368,9 +351,7 @@ End Function
 
 ' =============================================================================
 ' Helper: Copy page setup properties from an already-open template document.
-' Transfers margins, orientation, paper size, gutter, section start type,
-' vertical alignment, and header/footer distances. Matches by section index.
-' Returns True on success.
+' Matches by section index. Returns True on success.
 ' =============================================================================
 Private Function CopyPageSetupFromDoc(doc As Document, tmplDoc As Document) As Boolean
 
@@ -385,31 +366,20 @@ Private Function CopyPageSetupFromDoc(doc As Document, tmplDoc As Document) As B
     Dim i As Long
     For i = 1 To sectionCount
         With doc.Sections(i).PageSetup
-            ' Margins
             .TopMargin = tmplDoc.Sections(i).PageSetup.TopMargin
             .BottomMargin = tmplDoc.Sections(i).PageSetup.BottomMargin
             .LeftMargin = tmplDoc.Sections(i).PageSetup.LeftMargin
             .RightMargin = tmplDoc.Sections(i).PageSetup.RightMargin
             .Gutter = tmplDoc.Sections(i).PageSetup.Gutter
             .GutterPos = tmplDoc.Sections(i).PageSetup.GutterPos
-
-            ' Orientation and paper size
             .Orientation = tmplDoc.Sections(i).PageSetup.Orientation
             .PaperSize = tmplDoc.Sections(i).PageSetup.PaperSize
             .PageWidth = tmplDoc.Sections(i).PageSetup.PageWidth
             .PageHeight = tmplDoc.Sections(i).PageSetup.PageHeight
-
-            ' Header and footer distances from edge
             .HeaderDistance = tmplDoc.Sections(i).PageSetup.HeaderDistance
             .FooterDistance = tmplDoc.Sections(i).PageSetup.FooterDistance
-
-            ' Section start type (new page, continuous, even page, odd page)
             .SectionStart = tmplDoc.Sections(i).PageSetup.SectionStart
-
-            ' Vertical alignment (top, center, justified, bottom)
             .VerticalAlignment = tmplDoc.Sections(i).PageSetup.VerticalAlignment
-
-            ' Mirror margins (for bound documents)
             .MirrorMargins = tmplDoc.Sections(i).PageSetup.MirrorMargins
         End With
     Next i
