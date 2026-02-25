@@ -157,9 +157,9 @@ Private Function ResolveTemplatePath() As String
 
     ' Otherwise show a file picker filtered to Word templates
     With Application.FileDialog(msoFileDialogFilePicker)
-        .Title = "Select Your Template (.dotx or .dotm)"
+        .Title = "Select Your Template (.docx, .dotx, or .dotm)"
         .Filters.Clear
-        .Filters.Add "Word Templates", "*.dotx; *.dotm"
+        .Filters.Add "Word Documents & Templates", "*.docx; *.dotx; *.dotm"
         .Filters.Add "All Files", "*.*"
         .AllowMultiSelect = False
 

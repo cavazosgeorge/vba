@@ -5,7 +5,7 @@ A VBA macro that enforces consistent formatting across Word documents by attachi
 ## What It Does
 
 1. **Creates a timestamped backup** of your document before making any changes (e.g., `MyDoc_backup_2026-02-24_143022.docx`)
-2. **Attaches a `.dotx`/`.dotm` template** to the active document
+2. **Attaches a `.docx`, `.dotx`, or `.dotm` template** to the active document
 3. **Updates all styles** — paragraph, character, list, and table styles are overwritten to match the template's definitions
 4. **Disables auto-update on open** so styles won't silently change if the document is opened later with a different Normal.dotm
 5. **Copies headers and footers** from the template, including Primary, First Page, and Even Pages variants, with Link to Previous preserved
@@ -46,6 +46,7 @@ Headers/footers and page setup are matched **by section index**. If your documen
 
 ## Notes
 
+- The template can be a `.docx`, `.dotx`, or `.dotm` file — all work as a style source
 - Always test on copies of real documents first
 - The backup is saved in the same folder as the original document
 - If anything goes wrong mid-run, the error dialog includes the backup path so you can restore
