@@ -1,19 +1,16 @@
 # Apply Template Styles
 
-A VBA macro that copies all styles, headers/footers, and page layout from a template document into your target document in one click. Works with OneDrive/SharePoint files.
+A VBA macro that copies header/footer content, forces text color to black, and applies table style formatting from a template document into your target document in one click. Works with OneDrive/SharePoint files.
 
 ## What It Does
 
 1. **Creates a timestamped backup** of your document before making any changes
-2. **Copies all styles** from the template using `OrganizerCopy` — paragraph, character, list, and table styles
-3. **Clears direct text formatting overrides** (manual font/paragraph edits) so copied styles can take effect
-4. **Copies headers and footers** — Primary, First Page, and Even Pages variants, with Link to Previous preserved
-5. **Copies page setup** — margins, orientation, paper size, gutter, header/footer distance, section start type, vertical alignment, and mirror margins
-6. **Applies the template's table look** to all target tables (style + heading/banding options)
-7. **Disables auto-update on open** so styles won't silently change later
-8. **Rebuilds the Table of Contents** if one exists
-9. **Updates all fields** (page numbers, cross-references, etc.)
-10. **Shows a summary dialog** reporting what was applied
+2. **Copies headers and footers** from the template (Primary, First Page, and Even Pages variants)
+3. **Sets text color to black** in the target document body text (including notes/comments/text boxes)
+4. **Copies and applies the template table style** to all tables in the target document
+5. **Copies table style options** (header row, first/last column, row/column banding) from the template's first table
+6. **Updates all fields** (page numbers, cross-references, etc.)
+7. **Shows a summary dialog** reporting what was applied
 
 ## Installation
 
@@ -36,12 +33,11 @@ Storing the macro in Normal.dotm makes it available from any document without ne
 
 | Constant | Default | Purpose |
 |---|---|---|
-| `CLEAR_DIRECT_FORMATTING` | `True` | Removes manual character/paragraph formatting so style definitions from the template become authoritative. |
 | `DISABLE_AUTO_UPDATE` | `True` | Prevents Word from auto-updating styles when the document is opened later. |
 
 ## How It Handles Sections
 
-Headers/footers and page setup are matched **by section index**. If your document has more sections than the template, the extra sections keep their existing formatting. If the template has more, the extras are ignored.
+Headers/footers are matched **by section index**. If your document has more sections than the template, the extra sections keep their existing formatting. If the template has more, the extras are ignored.
 
 ## Why Open Both Documents?
 

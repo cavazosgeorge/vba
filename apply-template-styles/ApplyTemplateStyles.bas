@@ -1,8 +1,9 @@
 ' =============================================================================
-' ApplyTemplateStyles - Copy Styles, Headers/Footers & Page Setup from Template
+' ApplyTemplateStyles - Copy Headers/Footers + Table Style + Black Text Color
 ' =============================================================================
-' Copies all styles, headers/footers, and page layout from a template document
-' into the active document. Creates a timestamped backup before making changes.
+' Copies header/footer content, forces text color to black, and applies the
+' template's table style to all tables in the active document.
+' Creates a timestamped backup before making changes.
 '
 ' IMPORTANT: Open BOTH documents in Word before running:
 '   1. Your target document (the one you want to format)
@@ -24,20 +25,15 @@ Option Explicit
 
 ' Set to True to disable "auto update styles on open" after applying.
 Private Const DISABLE_AUTO_UPDATE As Boolean = True
-' Set to True to remove manual font/paragraph overrides so style definitions win.
-Private Const CLEAR_DIRECT_FORMATTING As Boolean = True
 
 Public Sub ApplyTemplateStyles()
 
     Dim doc As Document
     Dim tmplDoc As Document
     Dim backupPath As String
-    Dim stylesCopied As Long
-    Dim tocCount As Long
-    Dim tocUpdated As Boolean
     Dim headersFootersCopied As Boolean
-    Dim pageSetupCopied As Boolean
-    Dim directFormattingCleared As Boolean
+    Dim textColorSetToBlack As Boolean
+    Dim tablesCopied As Boolean
     Dim tablesFormatted As Long
     Dim tableStyleName As String
     Dim startTime As Single
@@ -78,133 +74,44 @@ Public Sub ApplyTemplateStyles()
         Exit Sub
     End If
 
-    ' --- 3. Copy all styles from template using OrganizerCopy ---
-    currentStep = "Copying styles"
-    On Error GoTo ErrHandler
-
-    Dim tmplPath As String
-    Dim docPath As String
-    tmplPath = tmplDoc.FullName
-    docPath = doc.FullName
-
-    Dim s As Style
-    For Each s In tmplDoc.Styles
-        On Error Resume Next
-        Application.OrganizerCopy _
-            Source:=tmplPath, _
-            Destination:=docPath, _
-            Name:=s.NameLocal, _
-            Object:=wdOrganizerObjectStyles
-        If Err.Number = 0 Then
-            stylesCopied = stylesCopied + 1
-        End If
-        Err.Clear
-    Next s
-    On Error GoTo ErrHandler
-
-    ' --- 4. Clear direct text formatting so copied styles can take effect ---
-    ' This removes manual font/paragraph overrides while preserving layout-level
-    ' formatting such as table borders, section breaks, and headers/footers.
-    currentStep = "Clearing direct formatting"
-    If CLEAR_DIRECT_FORMATTING Then
-        directFormattingCleared = ClearDirectFormatting(doc)
-    End If
-
-    ' --- 5. Copy headers, footers, and page setup ---
+    ' --- 3. Copy headers and footers ---
     currentStep = "Copying headers/footers"
+    On Error GoTo ErrHandler
     headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
 
-    currentStep = "Copying page setup"
-    pageSetupCopied = CopyPageSetupFromDoc(doc, tmplDoc)
+    ' --- 4. Force target document text to black ---
+    currentStep = "Setting text color to black"
+    textColorSetToBlack = SetBodyTextColorBlack(doc)
 
-    ' --- 6. Apply template's table style to all tables in target doc ---
+    ' --- 5. Copy + apply template table style to all target tables ---
     currentStep = "Formatting tables"
-    If tmplDoc.Tables.Count > 0 Then
-        ' Use first template table as style/look source.
-        Dim tmplTable As Table
-        Set tmplTable = tmplDoc.Tables(1)
-        tableStyleName = CStr(tmplTable.Style)
+    tablesCopied = CopyAndApplyTemplateTableStyle(doc, tmplDoc, tableStyleName, tablesFormatted)
 
-        Dim useHeadingRows As Boolean
-        Dim useLastRow As Boolean
-        Dim useFirstCol As Boolean
-        Dim useLastCol As Boolean
-        Dim useRowBands As Boolean
-        Dim useColBands As Boolean
-        useHeadingRows = tmplTable.ApplyStyleHeadingRows
-        useLastRow = tmplTable.ApplyStyleLastRow
-        useFirstCol = tmplTable.ApplyStyleFirstColumn
-        useLastCol = tmplTable.ApplyStyleLastColumn
-        useRowBands = tmplTable.ApplyStyleRowBands
-        useColBands = tmplTable.ApplyStyleColumnBands
-
-        ' Apply style and style options to every table in the target.
-        Dim tbl As Table
-        For Each tbl In doc.Tables
-            On Error Resume Next
-            tbl.Style = tableStyleName
-            tbl.ApplyStyleHeadingRows = useHeadingRows
-            tbl.ApplyStyleLastRow = useLastRow
-            tbl.ApplyStyleFirstColumn = useFirstCol
-            tbl.ApplyStyleLastColumn = useLastCol
-            tbl.ApplyStyleRowBands = useRowBands
-            tbl.ApplyStyleColumnBands = useColBands
-            If Err.Number = 0 Then
-                tablesFormatted = tablesFormatted + 1
-            End If
-            Err.Clear
-        Next tbl
-        On Error GoTo ErrHandler
-    End If
-
-    ' --- 7. Optionally disable auto-update on open ---
+    ' --- 6. Optionally disable auto-update on open ---
     If DISABLE_AUTO_UPDATE Then
         doc.UpdateStylesOnOpen = False
     End If
 
-    ' --- 8. Rebuild Table of Contents if present ---
-    currentStep = "Rebuilding TOC"
-    tocCount = doc.TablesOfContents.Count
-    If tocCount > 0 Then
-        Dim toc As TableOfContents
-        For Each toc In doc.TablesOfContents
-            toc.Update
-        Next toc
-        tocUpdated = True
-    End If
-
-    ' --- 9. Update all fields (page numbers, cross-refs, etc.) ---
+    ' --- 7. Update fields (page numbers, refs, etc.) ---
     currentStep = "Updating fields"
     doc.Fields.Update
 
-    ' --- 10. Summary ---
+    ' --- 8. Summary ---
     Dim elapsed As Single
     elapsed = Timer - startTime
 
     Dim summary As String
-    summary = "Template styles applied successfully." & vbCrLf & vbCrLf
+    summary = "Template formatting applied successfully." & vbCrLf & vbCrLf
     summary = summary & "Template:        " & tmplDoc.Name & vbCrLf
     summary = summary & "Backup:          " & backupPath & vbCrLf
-    summary = summary & "Styles copied:   " & stylesCopied & vbCrLf
-    summary = summary & "Styles in doc:   " & doc.Styles.Count & vbCrLf
     summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
-    summary = summary & "Page setup:      " & IIf(pageSetupCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
-    If CLEAR_DIRECT_FORMATTING Then
-        summary = summary & "Direct format:   " & IIf(directFormattingCleared, "Cleared (text stories)", "Skipped (error)") & vbCrLf
-    Else
-        summary = summary & "Direct format:   Left unchanged" & vbCrLf
-    End If
+    summary = summary & "Text color:      " & IIf(textColorSetToBlack, "Set to black", "Skipped (error)") & vbCrLf
 
     If Len(tableStyleName) > 0 Then
-        summary = summary & "Tables:          " & tablesFormatted & " of " & doc.Tables.Count & " formatted as """ & tableStyleName & """" & vbCrLf
+        summary = summary & "Tables:          " & IIf(tablesCopied, "Style copied", "Style copy failed") & _
+                  "; " & tablesFormatted & " of " & doc.Tables.Count & " formatted as """ & tableStyleName & """" & vbCrLf
     Else
         summary = summary & "Tables:          No tables found in template" & vbCrLf
-    End If
-
-    If tocUpdated Then
-        summary = summary & "TOC rebuilt:     Yes (" & tocCount & " found)" & vbCrLf
-    Else
-        summary = summary & "TOC rebuilt:     No TOC found" & vbCrLf
     End If
 
     summary = summary & "Fields updated:  Yes" & vbCrLf
@@ -226,6 +133,178 @@ ErrHandler:
            "Your backup is safe at:" & vbCrLf & backupPath, _
            vbCritical, "Apply Template Styles - Error"
 End Sub
+
+
+' =============================================================================
+' Helper: force body text color to black in main/body-related stories.
+' =============================================================================
+Private Function SetBodyTextColorBlack(doc As Document) As Boolean
+
+    On Error GoTo ColorError
+
+    doc.Content.Font.Color = wdColorBlack
+
+    Dim storyTypes As Variant
+    storyTypes = Array( _
+        wdFootnotesStory, _
+        wdEndnotesStory, _
+        wdCommentsStory, _
+        wdTextFrameStory)
+
+    Dim storyType As Variant
+    Dim rng As Object
+
+    For Each storyType In storyTypes
+        Set rng = Nothing
+
+        On Error Resume Next
+        Set rng = doc.StoryRanges(CLng(storyType))
+        If Err.Number <> 0 Then
+            Err.Clear
+            Set rng = Nothing
+        End If
+        On Error GoTo ColorError
+
+        Do While Not rng Is Nothing
+            rng.Font.Color = wdColorBlack
+            Set rng = rng.NextStoryRange
+        Loop
+    Next storyType
+
+    SetBodyTextColorBlack = True
+    Exit Function
+
+ColorError:
+    SetBodyTextColorBlack = False
+End Function
+
+
+' =============================================================================
+' Helper: copy the template table style into target and apply it to all tables.
+' Uses the first table in the template as the source of style + style options.
+' =============================================================================
+Private Function CopyAndApplyTemplateTableStyle( _
+    targetDoc As Document, _
+    tmplDoc As Document, _
+    ByRef outStyleName As String, _
+    ByRef outTablesFormatted As Long) As Boolean
+
+    On Error GoTo TableStyleError
+
+    outStyleName = ""
+    outTablesFormatted = 0
+
+    If tmplDoc.Tables.Count = 0 Then
+        CopyAndApplyTemplateTableStyle = True
+        Exit Function
+    End If
+
+    ' Copy all table styles first so dependencies are available in target.
+    Dim s As Style
+    For Each s In tmplDoc.Styles
+        If s.Type = wdStyleTypeTable Then
+            On Error Resume Next
+            Application.OrganizerCopy _
+                Source:=tmplDoc.FullName, _
+                Destination:=targetDoc.FullName, _
+                Name:=s.NameLocal, _
+                Object:=wdOrganizerObjectStyles
+            Err.Clear
+            On Error GoTo TableStyleError
+        End If
+    Next s
+
+    Dim tmplTable As Table
+    Set tmplTable = tmplDoc.Tables(1)
+
+    Dim tableStyleRef As Variant
+    tableStyleRef = tmplTable.Style
+    outStyleName = ResolveStyleDisplayName(tableStyleRef, tmplDoc)
+
+    If Len(outStyleName) > 0 Then
+        On Error Resume Next
+        Application.OrganizerCopy _
+            Source:=tmplDoc.FullName, _
+            Destination:=targetDoc.FullName, _
+            Name:=outStyleName, _
+            Object:=wdOrganizerObjectStyles
+        Err.Clear
+        On Error GoTo TableStyleError
+    End If
+
+    Dim useHeadingRows As Boolean
+    Dim useLastRow As Boolean
+    Dim useFirstCol As Boolean
+    Dim useLastCol As Boolean
+    Dim useRowBands As Boolean
+    Dim useColBands As Boolean
+    useHeadingRows = tmplTable.ApplyStyleHeadingRows
+    useLastRow = tmplTable.ApplyStyleLastRow
+    useFirstCol = tmplTable.ApplyStyleFirstColumn
+    useLastCol = tmplTable.ApplyStyleLastColumn
+    useRowBands = tmplTable.ApplyStyleRowBands
+    useColBands = tmplTable.ApplyStyleColumnBands
+
+    Dim tbl As Table
+    Dim applied As Boolean
+    For Each tbl In targetDoc.Tables
+        applied = False
+
+        On Error Resume Next
+        tbl.Style = tableStyleRef
+        If Err.Number = 0 Then applied = True
+        Err.Clear
+
+        If (Not applied) And Len(outStyleName) > 0 Then
+            tbl.Style = outStyleName
+            If Err.Number = 0 Then applied = True
+            Err.Clear
+        End If
+        On Error GoTo TableStyleError
+
+        If applied Then
+            tbl.ApplyStyleHeadingRows = useHeadingRows
+            tbl.ApplyStyleLastRow = useLastRow
+            tbl.ApplyStyleFirstColumn = useFirstCol
+            tbl.ApplyStyleLastColumn = useLastCol
+            tbl.ApplyStyleRowBands = useRowBands
+            tbl.ApplyStyleColumnBands = useColBands
+            outTablesFormatted = outTablesFormatted + 1
+        End If
+    Next tbl
+
+    CopyAndApplyTemplateTableStyle = True
+    Exit Function
+
+TableStyleError:
+    CopyAndApplyTemplateTableStyle = False
+End Function
+
+
+' =============================================================================
+' Helper: return a stable display name for a style reference (ID/name/object).
+' =============================================================================
+Private Function ResolveStyleDisplayName(styleRef As Variant, sourceDoc As Document) As String
+
+    On Error Resume Next
+
+    ResolveStyleDisplayName = ""
+
+    If IsNumeric(styleRef) Then
+        ResolveStyleDisplayName = sourceDoc.Styles(CLng(styleRef)).NameLocal
+        If Len(ResolveStyleDisplayName) > 0 Then Exit Function
+    End If
+
+    ResolveStyleDisplayName = CStr(styleRef)
+    If Len(ResolveStyleDisplayName) > 0 Then Exit Function
+
+    Dim st As Style
+    Set st = styleRef
+    If Not st Is Nothing Then
+        ResolveStyleDisplayName = st.NameLocal
+    End If
+
+End Function
 
 
 ' =============================================================================
@@ -263,7 +342,7 @@ Private Function PickTemplateFromOpenDocs(activeDoc As Document) As Document
     If count = 1 Then
         Dim answer As VbMsgBoxResult
         answer = MsgBox("Use """ & docNames(1) & """ as the template?" & vbCrLf & vbCrLf & _
-                        "This will copy its styles, headers/footers, and page setup into:" & vbCrLf & _
+                        "This will copy its headers/footers and table style into:" & vbCrLf & _
                         """" & activeDoc.Name & """", _
                         vbYesNo + vbQuestion, "Apply Template Styles")
         If answer = vbYes Then
@@ -277,8 +356,8 @@ Private Function PickTemplateFromOpenDocs(activeDoc As Document) As Document
     ' Multiple docs open — build a numbered list and ask
     Dim prompt As String
     prompt = "Which open document is your template?" & vbCrLf & vbCrLf
-    prompt = prompt & "Styles will be copied INTO: """ & activeDoc.Name & """" & vbCrLf
-    prompt = prompt & "Styles will be copied FROM the document you choose:" & vbCrLf & vbCrLf
+    prompt = prompt & "Formatting will be copied INTO: """ & activeDoc.Name & """" & vbCrLf
+    prompt = prompt & "Template source document:" & vbCrLf & vbCrLf
 
     Dim i As Long
     For i = 1 To count
@@ -407,118 +486,3 @@ Private Function CopyHeadersFootersFromDoc(doc As Document, tmplDoc As Document)
 HFError:
     CopyHeadersFootersFromDoc = False
 End Function
-
-
-' =============================================================================
-' Helper: Copy page setup properties from an already-open template document.
-' Matches by section index. Returns True on success.
-' =============================================================================
-Private Function CopyPageSetupFromDoc(doc As Document, tmplDoc As Document) As Boolean
-
-    On Error GoTo PSError
-
-    Dim sectionCount As Long
-    sectionCount = tmplDoc.Sections.Count
-    If sectionCount > doc.Sections.Count Then
-        sectionCount = doc.Sections.Count
-    End If
-
-    Dim i As Long
-    For i = 1 To sectionCount
-        With doc.Sections(i).PageSetup
-            .TopMargin = tmplDoc.Sections(i).PageSetup.TopMargin
-            .BottomMargin = tmplDoc.Sections(i).PageSetup.BottomMargin
-            .LeftMargin = tmplDoc.Sections(i).PageSetup.LeftMargin
-            .RightMargin = tmplDoc.Sections(i).PageSetup.RightMargin
-            .Gutter = tmplDoc.Sections(i).PageSetup.Gutter
-            .GutterPos = tmplDoc.Sections(i).PageSetup.GutterPos
-            .Orientation = tmplDoc.Sections(i).PageSetup.Orientation
-            .PaperSize = tmplDoc.Sections(i).PageSetup.PaperSize
-            .PageWidth = tmplDoc.Sections(i).PageSetup.PageWidth
-            .PageHeight = tmplDoc.Sections(i).PageSetup.PageHeight
-            .HeaderDistance = tmplDoc.Sections(i).PageSetup.HeaderDistance
-            .FooterDistance = tmplDoc.Sections(i).PageSetup.FooterDistance
-            .SectionStart = tmplDoc.Sections(i).PageSetup.SectionStart
-            .VerticalAlignment = tmplDoc.Sections(i).PageSetup.VerticalAlignment
-            .MirrorMargins = tmplDoc.Sections(i).PageSetup.MirrorMargins
-        End With
-    Next i
-
-    CopyPageSetupFromDoc = True
-    Exit Function
-
-PSError:
-    CopyPageSetupFromDoc = False
-End Function
-
-
-' =============================================================================
-' Helper: remove direct character/paragraph overrides from text stories only.
-' This lets style definitions drive appearance without stripping layout objects.
-' =============================================================================
-Private Function ClearDirectFormatting(doc As Object) As Boolean
-
-    On Error GoTo ClearError
-
-    Dim storyTypes As Variant
-    storyTypes = Array( _
-        wdMainTextStory, _
-        wdFootnotesStory, _
-        wdEndnotesStory, _
-        wdCommentsStory, _
-        wdTextFrameStory)
-
-    Dim storyType As Variant
-    Dim rng As Object
-
-    For Each storyType In storyTypes
-        Set rng = Nothing
-
-        On Error Resume Next
-        Set rng = doc.StoryRanges(CLng(storyType))
-        If Err.Number <> 0 Then
-            Err.Clear
-            Set rng = Nothing
-        End If
-        On Error GoTo ClearError
-
-        If Not rng Is Nothing Then
-            ClearDirectFormattingInStoryChain rng
-        End If
-    Next storyType
-
-    ClearDirectFormatting = True
-    Exit Function
-
-ClearError:
-    ClearDirectFormatting = False
-End Function
-
-
-' =============================================================================
-' Helper: each story type can have linked ranges. Clear each linked range.
-' =============================================================================
-Private Sub ClearDirectFormattingInStoryChain(ByVal storyRng As Object)
-
-    Dim rng As Object
-    Dim para As Object
-    Set rng = storyRng
-
-    Do While Not rng Is Nothing
-        ' Word version compatibility:
-        ' Some builds vary in available Range members.
-        ' Reset direct formatting paragraph-by-paragraph and skip table cells
-        ' so table borders/shading are preserved for the table-style step.
-        For Each para In rng.Paragraphs
-            On Error Resume Next
-            If para.Range.Tables.Count = 0 Then
-                para.Range.Font.Reset
-                para.Range.ParagraphFormat.Reset
-            End If
-            On Error GoTo 0
-        Next para
-
-        Set rng = rng.NextStoryRange
-    Loop
-
-End Sub
