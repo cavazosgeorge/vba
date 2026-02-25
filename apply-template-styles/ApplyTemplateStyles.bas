@@ -197,10 +197,26 @@ Private Function CreateBackup(doc As Document, ByRef outError As String) As Stri
     timestamp = Format(Now, "yyyy-MM-dd_HHmmss")
     backupName = baseName & "_backup_" & timestamp & ext
 
-    ' SaveCopyAs works even while the document is open (no file lock issues)
-    doc.SaveCopyAs folder & backupName
+    ' Try SaveCopyAs first, fall back to SaveAs2 if unavailable
+    ' (SaveCopyAs was renamed/removed in some Word versions)
+    Dim backupFullPath As String
+    backupFullPath = folder & backupName
 
-    CreateBackup = folder & backupName
+    On Error Resume Next
+    doc.SaveCopyAs backupFullPath
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error GoTo BackupError
+
+        ' Fallback: SaveAs2 to the backup path, then re-save original
+        Dim originalPath As String
+        originalPath = doc.FullName
+        doc.SaveAs2 FileName:=backupFullPath
+        doc.SaveAs2 FileName:=originalPath
+    End If
+    On Error GoTo BackupError
+
+    CreateBackup = backupFullPath
     Exit Function
 
 BackupError:
