@@ -36,6 +36,8 @@ Public Sub ApplyTemplateStyles()
     Dim tocUpdated As Boolean
     Dim headersFootersCopied As Boolean
     Dim pageSetupCopied As Boolean
+    Dim tablesFormatted As Long
+    Dim tableStyleName As String
     Dim startTime As Single
     Dim currentStep As String
 
@@ -108,12 +110,34 @@ Public Sub ApplyTemplateStyles()
     currentStep = "Copying page setup"
     pageSetupCopied = CopyPageSetupFromDoc(doc, tmplDoc)
 
-    ' --- 6. Optionally disable auto-update on open ---
+    ' --- 6. Apply template's table style to all tables in target doc ---
+    currentStep = "Formatting tables"
+    If tmplDoc.Tables.Count > 0 Then
+        ' Read the table style from the first table in the template
+        tableStyleName = tmplDoc.Tables(1).Style
+
+        ' Apply it to every table in the target, clearing direct formatting
+        Dim tbl As Table
+        For Each tbl In doc.Tables
+            On Error Resume Next
+            tbl.Style = tableStyleName
+            ' Clear direct border/shading overrides so the style takes effect
+            tbl.Range.Font.Reset
+            tbl.Range.ParagraphFormat.Reset
+            If Err.Number = 0 Then
+                tablesFormatted = tablesFormatted + 1
+            End If
+            Err.Clear
+        Next tbl
+        On Error GoTo ErrHandler
+    End If
+
+    ' --- 7. Optionally disable auto-update on open ---
     If DISABLE_AUTO_UPDATE Then
         doc.UpdateStylesOnOpen = False
     End If
 
-    ' --- 7. Rebuild Table of Contents if present ---
+    ' --- 8. Rebuild Table of Contents if present ---
     currentStep = "Rebuilding TOC"
     tocCount = doc.TablesOfContents.Count
     If tocCount > 0 Then
@@ -124,11 +148,11 @@ Public Sub ApplyTemplateStyles()
         tocUpdated = True
     End If
 
-    ' --- 8. Update all fields (page numbers, cross-refs, etc.) ---
+    ' --- 9. Update all fields (page numbers, cross-refs, etc.) ---
     currentStep = "Updating fields"
     doc.Fields.Update
 
-    ' --- 9. Summary ---
+    ' --- 10. Summary ---
     Dim elapsed As Single
     elapsed = Timer - startTime
 
@@ -140,6 +164,12 @@ Public Sub ApplyTemplateStyles()
     summary = summary & "Styles in doc:   " & doc.Styles.Count & vbCrLf
     summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
     summary = summary & "Page setup:      " & IIf(pageSetupCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
+
+    If Len(tableStyleName) > 0 Then
+        summary = summary & "Tables:          " & tablesFormatted & " of " & doc.Tables.Count & " formatted as """ & tableStyleName & """" & vbCrLf
+    Else
+        summary = summary & "Tables:          No tables found in template" & vbCrLf
+    End If
 
     If tocUpdated Then
         summary = summary & "TOC rebuilt:     Yes (" & tocCount & " found)" & vbCrLf
