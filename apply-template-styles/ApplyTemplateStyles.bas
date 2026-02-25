@@ -32,6 +32,7 @@ Public Sub ApplyTemplateStyles()
     Dim tmplDoc As Document
     Dim backupPath As String
     Dim headersFootersCopied As Boolean
+    Dim headerFooterFontsSynced As Boolean
     Dim fontSetFromTemplate As Boolean
     Dim textColorSetToBlack As Boolean
     Dim templateFontName As String
@@ -79,6 +80,7 @@ Public Sub ApplyTemplateStyles()
     currentStep = "Copying headers/footers"
     On Error GoTo ErrHandler
     headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
+    headerFooterFontsSynced = SyncHeaderFooterFonts(doc, tmplDoc)
 
     ' --- 4. Set target document text font from template ---
     currentStep = "Setting text font"
@@ -110,6 +112,7 @@ Public Sub ApplyTemplateStyles()
     summary = summary & "Template:        " & tmplDoc.Name & vbCrLf
     summary = summary & "Backup:          " & backupPath & vbCrLf
     summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
+    summary = summary & "H/F font type:   " & IIf(headerFooterFontsSynced, "Synced from template", "Skipped (error)") & vbCrLf
     If Len(templateFontName) > 0 Then
         summary = summary & "Text font:       " & IIf(fontSetFromTemplate, "Set", "Skipped (error)") & " (""" & templateFontName & """)" & vbCrLf
     Else
@@ -457,4 +460,72 @@ Private Function CopyHeadersFootersFromDoc(doc As Document, tmplDoc As Document)
 
 HFError:
     CopyHeadersFootersFromDoc = False
+End Function
+
+
+' =============================================================================
+' Helper: synchronize header/footer font type from template to target.
+' =============================================================================
+Private Function SyncHeaderFooterFonts(doc As Document, tmplDoc As Document) As Boolean
+
+    On Error GoTo HFFontError
+
+    On Error Resume Next
+    doc.Styles(wdStyleHeader).Font.Name = tmplDoc.Styles(wdStyleHeader).Font.Name
+    doc.Styles(wdStyleFooter).Font.Name = tmplDoc.Styles(wdStyleFooter).Font.Name
+    Err.Clear
+    On Error GoTo HFFontError
+
+    Dim sectionCount As Long
+    sectionCount = tmplDoc.Sections.Count
+    If sectionCount > doc.Sections.Count Then
+        sectionCount = doc.Sections.Count
+    End If
+
+    Dim i As Long
+    Dim hfType As Variant
+    Dim hfTypes As Variant
+    Dim sourceName As String
+    hfTypes = Array(wdHeaderFooterPrimary, wdHeaderFooterFirstPage, wdHeaderFooterEvenPages)
+
+    For i = 1 To sectionCount
+        For Each hfType In hfTypes
+            If tmplDoc.Sections(i).Headers(hfType).Exists And doc.Sections(i).Headers(hfType).Exists Then
+                sourceName = GetRangeFontName(tmplDoc.Sections(i).Headers(hfType).Range)
+                If Len(sourceName) > 0 Then
+                    doc.Sections(i).Headers(hfType).Range.Font.Name = sourceName
+                End If
+            End If
+
+            If tmplDoc.Sections(i).Footers(hfType).Exists And doc.Sections(i).Footers(hfType).Exists Then
+                sourceName = GetRangeFontName(tmplDoc.Sections(i).Footers(hfType).Range)
+                If Len(sourceName) > 0 Then
+                    doc.Sections(i).Footers(hfType).Range.Font.Name = sourceName
+                End If
+            End If
+        Next hfType
+    Next i
+
+    SyncHeaderFooterFonts = True
+    Exit Function
+
+HFFontError:
+    SyncHeaderFooterFonts = False
+End Function
+
+
+' =============================================================================
+' Helper: safely resolve a usable font name from a range.
+' =============================================================================
+Private Function GetRangeFontName(rng As Range) As String
+
+    On Error Resume Next
+
+    GetRangeFontName = Trim$(rng.Font.Name)
+    If Len(GetRangeFontName) > 0 Then Exit Function
+
+    If rng.Characters.Count > 0 Then
+        GetRangeFontName = Trim$(rng.Characters(1).Font.Name)
+    End If
+
 End Function

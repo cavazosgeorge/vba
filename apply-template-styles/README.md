@@ -1,16 +1,17 @@
 # Apply Template Styles
 
-A VBA macro that copies header/footer content, applies the template's body font, forces text color to black, and formats table headers (first row gray + bold) in your target document in one click. Works with OneDrive/SharePoint files.
+A VBA macro that copies header/footer content, syncs header/footer font type, applies the template's body font, forces text color to black, and formats table headers (first row gray + bold) in your target document in one click. Works with OneDrive/SharePoint files.
 
 ## What It Does
 
 1. **Creates a timestamped backup** of your document before making any changes
 2. **Copies headers and footers** from the template (Primary, First Page, and Even Pages variants)
-3. **Sets text font family** in the target document to the template's `Normal` style font
-4. **Sets text color to black** in the target document body text (including notes/comments/text boxes)
-5. **Formats all table headers** in the target document: first row gets gray fill (`RGB(191, 191, 191)`) and bold text
-6. **Updates all fields** (page numbers, cross-references, etc.)
-7. **Shows a summary dialog** reporting what was applied
+3. **Syncs header/footer font type** from template to target
+4. **Sets text font family** in the target document to the template's `Normal` style font
+5. **Sets text color to black** in the target document body text (including notes/comments/text boxes)
+6. **Formats all table headers** in the target document: first row gets gray fill (`RGB(191, 191, 191)`) and bold text
+7. **Updates all fields** (page numbers, cross-references, etc.)
+8. **Shows a summary dialog** reporting what was applied
 
 ## Installation
 
