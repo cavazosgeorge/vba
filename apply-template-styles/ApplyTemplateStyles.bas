@@ -103,14 +103,21 @@ Public Sub ApplyTemplateStyles()
     Next s
     On Error GoTo ErrHandler
 
-    ' --- 5. Copy headers, footers, and page setup ---
+    ' --- 5. Strip all direct formatting so styles take full effect ---
+    ' Direct formatting (manually applied font color, size, bold, etc.) overrides
+    ' style definitions. Resetting it forces text to inherit from its assigned style.
+    currentStep = "Clearing direct formatting"
+    doc.Content.Font.Reset
+    doc.Content.ParagraphFormat.Reset
+
+    ' --- 6. Copy headers, footers, and page setup ---
     currentStep = "Copying headers/footers"
     headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
 
     currentStep = "Copying page setup"
     pageSetupCopied = CopyPageSetupFromDoc(doc, tmplDoc)
 
-    ' --- 6. Apply template's table style to all tables in target doc ---
+    ' --- 7. Apply template's table style to all tables in target doc ---
     currentStep = "Formatting tables"
     If tmplDoc.Tables.Count > 0 Then
         ' Read the table style from the first table in the template
@@ -132,12 +139,12 @@ Public Sub ApplyTemplateStyles()
         On Error GoTo ErrHandler
     End If
 
-    ' --- 7. Optionally disable auto-update on open ---
+    ' --- 8. Optionally disable auto-update on open ---
     If DISABLE_AUTO_UPDATE Then
         doc.UpdateStylesOnOpen = False
     End If
 
-    ' --- 8. Rebuild Table of Contents if present ---
+    ' --- 9. Rebuild Table of Contents if present ---
     currentStep = "Rebuilding TOC"
     tocCount = doc.TablesOfContents.Count
     If tocCount > 0 Then
@@ -148,11 +155,11 @@ Public Sub ApplyTemplateStyles()
         tocUpdated = True
     End If
 
-    ' --- 9. Update all fields (page numbers, cross-refs, etc.) ---
+    ' --- 10. Update all fields (page numbers, cross-refs, etc.) ---
     currentStep = "Updating fields"
     doc.Fields.Update
 
-    ' --- 10. Summary ---
+    ' --- 11. Summary ---
     Dim elapsed As Single
     elapsed = Timer - startTime
 
