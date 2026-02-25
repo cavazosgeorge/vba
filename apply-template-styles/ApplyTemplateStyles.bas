@@ -24,18 +24,20 @@ Option Explicit
 
 ' Set to True to disable "auto update styles on open" after applying.
 Private Const DISABLE_AUTO_UPDATE As Boolean = True
+' Set to True to remove manual font/paragraph overrides so style definitions win.
+Private Const CLEAR_DIRECT_FORMATTING As Boolean = True
 
 Public Sub ApplyTemplateStyles()
 
     Dim doc As Document
     Dim tmplDoc As Document
     Dim backupPath As String
-    Dim styleCountBefore As Long
     Dim stylesCopied As Long
     Dim tocCount As Long
     Dim tocUpdated As Boolean
     Dim headersFootersCopied As Boolean
     Dim pageSetupCopied As Boolean
+    Dim directFormattingCleared As Boolean
     Dim tablesFormatted As Long
     Dim tableStyleName As String
     Dim startTime As Single
@@ -76,10 +78,7 @@ Public Sub ApplyTemplateStyles()
         Exit Sub
     End If
 
-    ' --- 3. Count styles before (for summary) ---
-    styleCountBefore = doc.Styles.Count
-
-    ' --- 4. Copy all styles from template using OrganizerCopy ---
+    ' --- 3. Copy all styles from template using OrganizerCopy ---
     currentStep = "Copying styles"
     On Error GoTo ErrHandler
 
@@ -103,34 +102,53 @@ Public Sub ApplyTemplateStyles()
     Next s
     On Error GoTo ErrHandler
 
-    ' --- 5. Strip all direct formatting so styles take full effect ---
-    ' Direct formatting (manually applied font color, size, bold, etc.) overrides
-    ' style definitions. Resetting it forces text to inherit from its assigned style.
+    ' --- 4. Clear direct text formatting so copied styles can take effect ---
+    ' This removes manual font/paragraph overrides while preserving layout-level
+    ' formatting such as table borders, section breaks, and headers/footers.
     currentStep = "Clearing direct formatting"
-    doc.Content.Font.Reset
-    doc.Content.ParagraphFormat.Reset
+    If CLEAR_DIRECT_FORMATTING Then
+        directFormattingCleared = ClearDirectFormatting(doc)
+    End If
 
-    ' --- 6. Copy headers, footers, and page setup ---
+    ' --- 5. Copy headers, footers, and page setup ---
     currentStep = "Copying headers/footers"
     headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
 
     currentStep = "Copying page setup"
     pageSetupCopied = CopyPageSetupFromDoc(doc, tmplDoc)
 
-    ' --- 7. Apply template's table style to all tables in target doc ---
+    ' --- 6. Apply template's table style to all tables in target doc ---
     currentStep = "Formatting tables"
     If tmplDoc.Tables.Count > 0 Then
-        ' Read the table style from the first table in the template
-        tableStyleName = tmplDoc.Tables(1).Style
+        ' Use first template table as style/look source.
+        Dim tmplTable As Table
+        Set tmplTable = tmplDoc.Tables(1)
+        tableStyleName = CStr(tmplTable.Style)
 
-        ' Apply it to every table in the target, clearing direct formatting
+        Dim useHeadingRows As Boolean
+        Dim useLastRow As Boolean
+        Dim useFirstCol As Boolean
+        Dim useLastCol As Boolean
+        Dim useRowBands As Boolean
+        Dim useColBands As Boolean
+        useHeadingRows = tmplTable.ApplyStyleHeadingRows
+        useLastRow = tmplTable.ApplyStyleLastRow
+        useFirstCol = tmplTable.ApplyStyleFirstColumn
+        useLastCol = tmplTable.ApplyStyleLastColumn
+        useRowBands = tmplTable.ApplyStyleRowBands
+        useColBands = tmplTable.ApplyStyleColumnBands
+
+        ' Apply style and style options to every table in the target.
         Dim tbl As Table
         For Each tbl In doc.Tables
             On Error Resume Next
             tbl.Style = tableStyleName
-            ' Clear direct border/shading overrides so the style takes effect
-            tbl.Range.Font.Reset
-            tbl.Range.ParagraphFormat.Reset
+            tbl.ApplyStyleHeadingRows = useHeadingRows
+            tbl.ApplyStyleLastRow = useLastRow
+            tbl.ApplyStyleFirstColumn = useFirstCol
+            tbl.ApplyStyleLastColumn = useLastCol
+            tbl.ApplyStyleRowBands = useRowBands
+            tbl.ApplyStyleColumnBands = useColBands
             If Err.Number = 0 Then
                 tablesFormatted = tablesFormatted + 1
             End If
@@ -139,12 +157,12 @@ Public Sub ApplyTemplateStyles()
         On Error GoTo ErrHandler
     End If
 
-    ' --- 8. Optionally disable auto-update on open ---
+    ' --- 7. Optionally disable auto-update on open ---
     If DISABLE_AUTO_UPDATE Then
         doc.UpdateStylesOnOpen = False
     End If
 
-    ' --- 9. Rebuild Table of Contents if present ---
+    ' --- 8. Rebuild Table of Contents if present ---
     currentStep = "Rebuilding TOC"
     tocCount = doc.TablesOfContents.Count
     If tocCount > 0 Then
@@ -155,11 +173,11 @@ Public Sub ApplyTemplateStyles()
         tocUpdated = True
     End If
 
-    ' --- 10. Update all fields (page numbers, cross-refs, etc.) ---
+    ' --- 9. Update all fields (page numbers, cross-refs, etc.) ---
     currentStep = "Updating fields"
     doc.Fields.Update
 
-    ' --- 11. Summary ---
+    ' --- 10. Summary ---
     Dim elapsed As Single
     elapsed = Timer - startTime
 
@@ -171,6 +189,11 @@ Public Sub ApplyTemplateStyles()
     summary = summary & "Styles in doc:   " & doc.Styles.Count & vbCrLf
     summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
     summary = summary & "Page setup:      " & IIf(pageSetupCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
+    If CLEAR_DIRECT_FORMATTING Then
+        summary = summary & "Direct format:   " & IIf(directFormattingCleared, "Cleared (text stories)", "Skipped (error)") & vbCrLf
+    Else
+        summary = summary & "Direct format:   Left unchanged" & vbCrLf
+    End If
 
     If Len(tableStyleName) > 0 Then
         summary = summary & "Tables:          " & tablesFormatted & " of " & doc.Tables.Count & " formatted as """ & tableStyleName & """" & vbCrLf
@@ -427,3 +450,65 @@ Private Function CopyPageSetupFromDoc(doc As Document, tmplDoc As Document) As B
 PSError:
     CopyPageSetupFromDoc = False
 End Function
+
+
+' =============================================================================
+' Helper: remove direct character/paragraph overrides from text stories only.
+' This lets style definitions drive appearance without stripping layout objects.
+' =============================================================================
+Private Function ClearDirectFormatting(doc As Document) As Boolean
+
+    On Error GoTo ClearError
+
+    Dim storyTypes As Variant
+    storyTypes = Array( _
+        wdMainTextStory, _
+        wdFootnotesStory, _
+        wdEndnotesStory, _
+        wdCommentsStory, _
+        wdTextFrameStory)
+
+    Dim storyType As Variant
+    Dim rng As Range
+
+    For Each storyType In storyTypes
+        Set rng = Nothing
+
+        On Error Resume Next
+        Set rng = doc.StoryRanges(CLng(storyType))
+        If Err.Number <> 0 Then
+            Err.Clear
+            Set rng = Nothing
+        End If
+        On Error GoTo ClearError
+
+        If Not rng Is Nothing Then
+            ClearDirectFormattingInStoryChain rng
+        End If
+    Next storyType
+
+    ClearDirectFormatting = True
+    Exit Function
+
+ClearError:
+    ClearDirectFormatting = False
+End Function
+
+
+' =============================================================================
+' Helper: each story type can have linked ranges. Clear each linked range.
+' =============================================================================
+Private Sub ClearDirectFormattingInStoryChain(ByVal storyRng As Range)
+
+    Dim rng As Range
+    Set rng = storyRng
+
+    Do While Not rng Is Nothing
+        On Error Resume Next
+        rng.ClearCharacterDirectFormatting
+        rng.ClearParagraphDirectFormatting
+        On Error GoTo 0
+        Set rng = rng.NextStoryRange
+    Loop
+
+End Sub

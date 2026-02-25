@@ -6,12 +6,14 @@ A VBA macro that copies all styles, headers/footers, and page layout from a temp
 
 1. **Creates a timestamped backup** of your document before making any changes
 2. **Copies all styles** from the template using `OrganizerCopy` — paragraph, character, list, and table styles
-3. **Copies headers and footers** — Primary, First Page, and Even Pages variants, with Link to Previous preserved
-4. **Copies page setup** — margins, orientation, paper size, gutter, header/footer distance, section start type, vertical alignment, and mirror margins
-5. **Disables auto-update on open** so styles won't silently change later
-6. **Rebuilds the Table of Contents** if one exists
-7. **Updates all fields** (page numbers, cross-references, etc.)
-8. **Shows a summary dialog** reporting what was applied
+3. **Clears direct text formatting overrides** (manual font/paragraph edits) so copied styles can take effect
+4. **Copies headers and footers** — Primary, First Page, and Even Pages variants, with Link to Previous preserved
+5. **Copies page setup** — margins, orientation, paper size, gutter, header/footer distance, section start type, vertical alignment, and mirror margins
+6. **Applies the template's table look** to all target tables (style + heading/banding options)
+7. **Disables auto-update on open** so styles won't silently change later
+8. **Rebuilds the Table of Contents** if one exists
+9. **Updates all fields** (page numbers, cross-references, etc.)
+10. **Shows a summary dialog** reporting what was applied
 
 ## Installation
 
@@ -34,6 +36,7 @@ Storing the macro in Normal.dotm makes it available from any document without ne
 
 | Constant | Default | Purpose |
 |---|---|---|
+| `CLEAR_DIRECT_FORMATTING` | `True` | Removes manual character/paragraph formatting so style definitions from the template become authoritative. |
 | `DISABLE_AUTO_UPDATE` | `True` | Prevents Word from auto-updating styles when the document is opened later. |
 
 ## How It Handles Sections
