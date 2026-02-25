@@ -456,7 +456,7 @@ End Function
 ' Helper: remove direct character/paragraph overrides from text stories only.
 ' This lets style definitions drive appearance without stripping layout objects.
 ' =============================================================================
-Private Function ClearDirectFormatting(doc As Document) As Boolean
+Private Function ClearDirectFormatting(doc As Object) As Boolean
 
     On Error GoTo ClearError
 
@@ -469,7 +469,7 @@ Private Function ClearDirectFormatting(doc As Document) As Boolean
         wdTextFrameStory)
 
     Dim storyType As Variant
-    Dim rng As Range
+    Dim rng As Object
 
     For Each storyType In storyTypes
         Set rng = Nothing
@@ -498,20 +498,20 @@ End Function
 ' =============================================================================
 ' Helper: each story type can have linked ranges. Clear each linked range.
 ' =============================================================================
-Private Sub ClearDirectFormattingInStoryChain(ByVal storyRng As Range)
+Private Sub ClearDirectFormattingInStoryChain(ByVal storyRng As Object)
 
-    Dim rng As Range
-    Dim para As Paragraph
+    Dim rng As Object
+    Dim para As Object
     Set rng = storyRng
 
     Do While Not rng Is Nothing
         ' Word version compatibility:
-        ' Some builds do not expose ClearCharacterDirectFormatting on Range.
+        ' Some builds vary in available Range members.
         ' Reset direct formatting paragraph-by-paragraph and skip table cells
         ' so table borders/shading are preserved for the table-style step.
         For Each para In rng.Paragraphs
             On Error Resume Next
-            If Not para.Range.Information(wdWithInTable) Then
+            If para.Range.Tables.Count = 0 Then
                 para.Range.Font.Reset
                 para.Range.ParagraphFormat.Reset
             End If
