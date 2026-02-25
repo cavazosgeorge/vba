@@ -168,7 +168,11 @@ Private Function ResolveTemplatePath() As String
         .AllowMultiSelect = False
 
         If .Show = -1 Then
-            ResolveTemplatePath = .SelectedItems(1)
+            ' Replace URL-encoded spaces (%20) with actual spaces
+            ' FileDialog can return URL-encoded paths that Word can't open
+            Dim rawPath As String
+            rawPath = .SelectedItems(1)
+            ResolveTemplatePath = Replace(rawPath, "%20", " ")
         Else
             ResolveTemplatePath = ""  ' user cancelled
         End If
