@@ -84,21 +84,45 @@ Public Sub ApplyTemplateStyles()
     ' --- 3. Count styles before (for summary) ---
     styleCountBefore = doc.Styles.Count
 
-    ' --- 4. Attach the template ---
+    ' --- 4. Open template and copy styles, headers/footers, page setup ---
     On Error GoTo ErrHandler
-    doc.AttachedTemplate = templatePath
 
-    ' --- 5. Update all styles from the template ---
-    doc.UpdateStyles
+    Dim tmplDoc As Document
+    Set tmplDoc = Documents.Open( _
+        FileName:=templatePath, _
+        ReadOnly:=True, _
+        AddToRecentFiles:=False, _
+        Visible:=False)
 
-    ' --- 6. Optionally disable auto-update on open ---
+    ' --- 5. Copy all styles from template using OrganizerCopy ---
+    ' Works with .docx, .dotx, and .dotm — no AttachedTemplate needed
+    Dim stylesCopied As Long
+    Dim s As Style
+    For Each s In tmplDoc.Styles
+        On Error Resume Next
+        Application.OrganizerCopy _
+            Source:=templatePath, _
+            Destination:=doc.FullName, _
+            Name:=s.NameLocal, _
+            Object:=wdOrganizerObjectStyles
+        If Err.Number = 0 Then
+            stylesCopied = stylesCopied + 1
+        End If
+        Err.Clear
+    Next s
+    On Error GoTo ErrHandler
+
+    ' --- 6. Copy headers, footers, and page setup directly from open template ---
+    headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
+    pageSetupCopied = CopyPageSetupFromDoc(doc, tmplDoc)
+
+    tmplDoc.Close SaveChanges:=False
+    Set tmplDoc = Nothing
+
+    ' --- 7. Optionally disable auto-update on open ---
     If DISABLE_AUTO_UPDATE Then
         doc.UpdateStylesOnOpen = False
     End If
-
-    ' --- 7. Copy headers, footers, and page setup from template ---
-    headersFootersCopied = CopyHeadersFooters(doc, templatePath)
-    pageSetupCopied = CopyPageSetup(doc, templatePath)
 
     ' --- 8. Rebuild Table of Contents if present ---
     tocCount = doc.TablesOfContents.Count
@@ -121,7 +145,8 @@ Public Sub ApplyTemplateStyles()
     summary = "Template styles applied successfully." & vbCrLf & vbCrLf
     summary = summary & "Template:  " & templatePath & vbCrLf
     summary = summary & "Backup:    " & backupPath & vbCrLf
-    summary = summary & "Styles in doc:  " & doc.Styles.Count & vbCrLf
+    summary = summary & "Styles copied:   " & stylesCopied & vbCrLf
+    summary = summary & "Styles in doc:   " & doc.Styles.Count & vbCrLf
 
     summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied from template", "Skipped (error or no sections)") & vbCrLf
     summary = summary & "Page setup:      " & IIf(pageSetupCopied, "Copied from template", "Skipped (error or no sections)") & vbCrLf
@@ -140,6 +165,9 @@ Public Sub ApplyTemplateStyles()
     Exit Sub
 
 ErrHandler:
+    On Error Resume Next
+    If Not tmplDoc Is Nothing Then tmplDoc.Close SaveChanges:=False
+    On Error GoTo 0
     MsgBox "Error " & Err.Number & ": " & Err.Description & vbCrLf & vbCrLf & _
            "Your backup is safe at:" & vbCrLf & backupPath, _
            vbCritical, "Apply Template Styles - Error"
@@ -230,22 +258,13 @@ End Function
 
 
 ' =============================================================================
-' Helper: Copy headers and footers from the template into the active document.
-' Opens the template as a hidden document, copies header/footer content from
-' each section, then closes it. Matches sections by index — if the doc has
-' more sections than the template, extra sections keep their existing
-' headers/footers. Returns True on success.
+' Helper: Copy headers and footers from an already-open template document.
+' Matches sections by index — if the doc has more sections than the template,
+' extra sections keep their existing headers/footers. Returns True on success.
 ' =============================================================================
-Private Function CopyHeadersFooters(doc As Document, templatePath As String) As Boolean
+Private Function CopyHeadersFootersFromDoc(doc As Document, tmplDoc As Document) As Boolean
 
     On Error GoTo HFError
-
-    Dim tmplDoc As Document
-    Set tmplDoc = Documents.Open( _
-        FileName:=templatePath, _
-        ReadOnly:=True, _
-        AddToRecentFiles:=False, _
-        Visible:=False)
 
     Dim sectionCount As Long
     sectionCount = tmplDoc.Sections.Count
@@ -288,33 +307,23 @@ Private Function CopyHeadersFooters(doc As Document, templatePath As String) As 
         Next hfType
     Next i
 
-    tmplDoc.Close SaveChanges:=False
-    CopyHeadersFooters = True
+    CopyHeadersFootersFromDoc = True
     Exit Function
 
 HFError:
-    On Error Resume Next
-    If Not tmplDoc Is Nothing Then tmplDoc.Close SaveChanges:=False
-    CopyHeadersFooters = False
+    CopyHeadersFootersFromDoc = False
 End Function
 
 
 ' =============================================================================
-' Helper: Copy page setup properties from the template into the active document.
+' Helper: Copy page setup properties from an already-open template document.
 ' Transfers margins, orientation, paper size, gutter, section start type,
 ' vertical alignment, and header/footer distances. Matches by section index.
 ' Returns True on success.
 ' =============================================================================
-Private Function CopyPageSetup(doc As Document, templatePath As String) As Boolean
+Private Function CopyPageSetupFromDoc(doc As Document, tmplDoc As Document) As Boolean
 
     On Error GoTo PSError
-
-    Dim tmplDoc As Document
-    Set tmplDoc = Documents.Open( _
-        FileName:=templatePath, _
-        ReadOnly:=True, _
-        AddToRecentFiles:=False, _
-        Visible:=False)
 
     Dim sectionCount As Long
     sectionCount = tmplDoc.Sections.Count
@@ -354,12 +363,9 @@ Private Function CopyPageSetup(doc As Document, templatePath As String) As Boole
         End With
     Next i
 
-    tmplDoc.Close SaveChanges:=False
-    CopyPageSetup = True
+    CopyPageSetupFromDoc = True
     Exit Function
 
 PSError:
-    On Error Resume Next
-    If Not tmplDoc Is Nothing Then tmplDoc.Close SaveChanges:=False
-    CopyPageSetup = False
+    CopyPageSetupFromDoc = False
 End Function
