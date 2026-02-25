@@ -1,8 +1,8 @@
 ' =============================================================================
-' ApplyTemplateStyles - Copy Headers/Footers + Table Style + Black Text Color
+' ApplyTemplateStyles - Copy Headers/Footers + Black Text + Table Header Format
 ' =============================================================================
 ' Copies header/footer content, forces text color to black, and applies the
-' template's table style to all tables in the active document.
+' same table header formatting to all tables in the active document.
 ' Creates a timestamped backup before making changes.
 '
 ' IMPORTANT: Open BOTH documents in Word before running:
@@ -33,9 +33,8 @@ Public Sub ApplyTemplateStyles()
     Dim backupPath As String
     Dim headersFootersCopied As Boolean
     Dim textColorSetToBlack As Boolean
-    Dim tablesCopied As Boolean
-    Dim tablesFormatted As Long
-    Dim tableStyleName As String
+    Dim tableHeadersFormatted As Long
+    Dim tableHeadersUpdated As Boolean
     Dim startTime As Single
     Dim currentStep As String
 
@@ -83,9 +82,9 @@ Public Sub ApplyTemplateStyles()
     currentStep = "Setting text color to black"
     textColorSetToBlack = SetBodyTextColorBlack(doc)
 
-    ' --- 5. Copy + apply template table style to all target tables ---
-    currentStep = "Formatting tables"
-    tablesCopied = CopyAndApplyTemplateTableStyle(doc, tmplDoc, tableStyleName, tablesFormatted)
+    ' --- 5. Format table headers in target document ---
+    currentStep = "Formatting table headers"
+    tableHeadersUpdated = FormatTableHeaders(doc, tableHeadersFormatted)
 
     ' --- 6. Optionally disable auto-update on open ---
     If DISABLE_AUTO_UPDATE Then
@@ -107,12 +106,8 @@ Public Sub ApplyTemplateStyles()
     summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
     summary = summary & "Text color:      " & IIf(textColorSetToBlack, "Set to black", "Skipped (error)") & vbCrLf
 
-    If Len(tableStyleName) > 0 Then
-        summary = summary & "Tables:          " & IIf(tablesCopied, "Style copied", "Style copy failed") & _
-                  "; " & tablesFormatted & " of " & doc.Tables.Count & " formatted as """ & tableStyleName & """" & vbCrLf
-    Else
-        summary = summary & "Tables:          No tables found in template" & vbCrLf
-    End If
+    summary = summary & "Table headers:   " & IIf(tableHeadersUpdated, "Updated", "Skipped (error)") & _
+              "; " & tableHeadersFormatted & " of " & doc.Tables.Count & " tables formatted" & vbCrLf
 
     summary = summary & "Fields updated:  Yes" & vbCrLf
     summary = summary & "Auto-update:     " & IIf(DISABLE_AUTO_UPDATE, "Disabled", "Left unchanged") & vbCrLf
@@ -180,130 +175,38 @@ End Function
 
 
 ' =============================================================================
-' Helper: copy the template table style into target and apply it to all tables.
-' Uses the first table in the template as the source of style + style options.
+' Helper: apply standard header formatting to the first row of every table.
+' Matches requested format: gray background + bold text.
 ' =============================================================================
-Private Function CopyAndApplyTemplateTableStyle( _
-    targetDoc As Document, _
-    tmplDoc As Document, _
-    ByRef outStyleName As String, _
-    ByRef outTablesFormatted As Long) As Boolean
+Private Function FormatTableHeaders(doc As Document, ByRef outTablesFormatted As Long) As Boolean
 
-    On Error GoTo TableStyleError
+    On Error GoTo TableHeaderError
 
-    outStyleName = ""
     outTablesFormatted = 0
 
-    If tmplDoc.Tables.Count = 0 Then
-        CopyAndApplyTemplateTableStyle = True
-        Exit Function
-    End If
-
-    ' Copy all table styles first so dependencies are available in target.
-    Dim s As Style
-    For Each s In tmplDoc.Styles
-        If s.Type = wdStyleTypeTable Then
-            On Error Resume Next
-            Application.OrganizerCopy _
-                Source:=tmplDoc.FullName, _
-                Destination:=targetDoc.FullName, _
-                Name:=s.NameLocal, _
-                Object:=wdOrganizerObjectStyles
-            Err.Clear
-            On Error GoTo TableStyleError
-        End If
-    Next s
-
-    Dim tmplTable As Table
-    Set tmplTable = tmplDoc.Tables(1)
-
-    Dim tableStyleRef As Variant
-    tableStyleRef = tmplTable.Style
-    outStyleName = ResolveStyleDisplayName(tableStyleRef, tmplDoc)
-
-    If Len(outStyleName) > 0 Then
-        On Error Resume Next
-        Application.OrganizerCopy _
-            Source:=tmplDoc.FullName, _
-            Destination:=targetDoc.FullName, _
-            Name:=outStyleName, _
-            Object:=wdOrganizerObjectStyles
-        Err.Clear
-        On Error GoTo TableStyleError
-    End If
-
-    Dim useHeadingRows As Boolean
-    Dim useLastRow As Boolean
-    Dim useFirstCol As Boolean
-    Dim useLastCol As Boolean
-    Dim useRowBands As Boolean
-    Dim useColBands As Boolean
-    useHeadingRows = tmplTable.ApplyStyleHeadingRows
-    useLastRow = tmplTable.ApplyStyleLastRow
-    useFirstCol = tmplTable.ApplyStyleFirstColumn
-    useLastCol = tmplTable.ApplyStyleLastColumn
-    useRowBands = tmplTable.ApplyStyleRowBands
-    useColBands = tmplTable.ApplyStyleColumnBands
-
     Dim tbl As Table
-    Dim applied As Boolean
-    For Each tbl In targetDoc.Tables
-        applied = False
+    Dim cell As Cell
 
+    For Each tbl In doc.Tables
         On Error Resume Next
-        tbl.Style = tableStyleRef
-        If Err.Number = 0 Then applied = True
-        Err.Clear
-
-        If (Not applied) And Len(outStyleName) > 0 Then
-            tbl.Style = outStyleName
-            If Err.Number = 0 Then applied = True
+        If tbl.Rows.Count > 0 Then
+            For Each cell In tbl.Rows(1).Cells
+                cell.Shading.BackgroundPatternColor = RGB(191, 191, 191)
+                cell.Range.Font.Bold = True
+            Next cell
+            If Err.Number = 0 Then
+                outTablesFormatted = outTablesFormatted + 1
+            End If
             Err.Clear
         End If
-        On Error GoTo TableStyleError
-
-        If applied Then
-            tbl.ApplyStyleHeadingRows = useHeadingRows
-            tbl.ApplyStyleLastRow = useLastRow
-            tbl.ApplyStyleFirstColumn = useFirstCol
-            tbl.ApplyStyleLastColumn = useLastCol
-            tbl.ApplyStyleRowBands = useRowBands
-            tbl.ApplyStyleColumnBands = useColBands
-            outTablesFormatted = outTablesFormatted + 1
-        End If
+        On Error GoTo TableHeaderError
     Next tbl
 
-    CopyAndApplyTemplateTableStyle = True
+    FormatTableHeaders = True
     Exit Function
 
-TableStyleError:
-    CopyAndApplyTemplateTableStyle = False
-End Function
-
-
-' =============================================================================
-' Helper: return a stable display name for a style reference (ID/name/object).
-' =============================================================================
-Private Function ResolveStyleDisplayName(styleRef As Variant, sourceDoc As Document) As String
-
-    On Error Resume Next
-
-    ResolveStyleDisplayName = ""
-
-    If IsNumeric(styleRef) Then
-        ResolveStyleDisplayName = sourceDoc.Styles(CLng(styleRef)).NameLocal
-        If Len(ResolveStyleDisplayName) > 0 Then Exit Function
-    End If
-
-    ResolveStyleDisplayName = CStr(styleRef)
-    If Len(ResolveStyleDisplayName) > 0 Then Exit Function
-
-    Dim st As Style
-    Set st = styleRef
-    If Not st Is Nothing Then
-        ResolveStyleDisplayName = st.NameLocal
-    End If
-
+TableHeaderError:
+    FormatTableHeaders = False
 End Function
 
 
@@ -342,7 +245,7 @@ Private Function PickTemplateFromOpenDocs(activeDoc As Document) As Document
     If count = 1 Then
         Dim answer As VbMsgBoxResult
         answer = MsgBox("Use """ & docNames(1) & """ as the template?" & vbCrLf & vbCrLf & _
-                        "This will copy its headers/footers and table style into:" & vbCrLf & _
+                        "This will copy its headers/footers into:" & vbCrLf & _
                         """" & activeDoc.Name & """", _
                         vbYesNo + vbQuestion, "Apply Template Styles")
         If answer = vbYes Then

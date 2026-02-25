@@ -1,16 +1,15 @@
 # Apply Template Styles
 
-A VBA macro that copies header/footer content, forces text color to black, and applies table style formatting from a template document into your target document in one click. Works with OneDrive/SharePoint files.
+A VBA macro that copies header/footer content, forces text color to black, and formats table headers (first row gray + bold) in your target document in one click. Works with OneDrive/SharePoint files.
 
 ## What It Does
 
 1. **Creates a timestamped backup** of your document before making any changes
 2. **Copies headers and footers** from the template (Primary, First Page, and Even Pages variants)
 3. **Sets text color to black** in the target document body text (including notes/comments/text boxes)
-4. **Copies and applies the template table style** to all tables in the target document
-5. **Copies table style options** (header row, first/last column, row/column banding) from the template's first table
-6. **Updates all fields** (page numbers, cross-references, etc.)
-7. **Shows a summary dialog** reporting what was applied
+4. **Formats all table headers** in the target document: first row gets gray fill (`RGB(191, 191, 191)`) and bold text
+5. **Updates all fields** (page numbers, cross-references, etc.)
+6. **Shows a summary dialog** reporting what was applied
 
 ## Installation
 
@@ -45,7 +44,7 @@ This macro avoids file picker paths entirely. OneDrive and SharePoint synced fil
 
 ## Notes
 
-- The template can be a `.docx`, `.dotx`, or `.dotm` file — all work as a style source
+- The template can be a `.docx`, `.dotx`, or `.dotm` file — used as the header/footer source
 - Works with OneDrive, SharePoint, and local files
 - Always test on copies of real documents first
 - The backup is saved in the same folder as the original document
