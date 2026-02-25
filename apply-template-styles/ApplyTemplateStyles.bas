@@ -32,7 +32,9 @@ Public Sub ApplyTemplateStyles()
     Dim tmplDoc As Document
     Dim backupPath As String
     Dim headersFootersCopied As Boolean
+    Dim fontSetFromTemplate As Boolean
     Dim textColorSetToBlack As Boolean
+    Dim templateFontName As String
     Dim tableHeadersFormatted As Long
     Dim tableHeadersUpdated As Boolean
     Dim startTime As Single
@@ -78,24 +80,28 @@ Public Sub ApplyTemplateStyles()
     On Error GoTo ErrHandler
     headersFootersCopied = CopyHeadersFootersFromDoc(doc, tmplDoc)
 
-    ' --- 4. Force target document text to black ---
+    ' --- 4. Set target document text font from template ---
+    currentStep = "Setting text font"
+    fontSetFromTemplate = SetBodyFontFromTemplate(doc, tmplDoc, templateFontName)
+
+    ' --- 5. Force target document text to black ---
     currentStep = "Setting text color to black"
     textColorSetToBlack = SetBodyTextColorBlack(doc)
 
-    ' --- 5. Format table headers in target document ---
+    ' --- 6. Format table headers in target document ---
     currentStep = "Formatting table headers"
     tableHeadersUpdated = FormatTableHeaders(doc, tableHeadersFormatted)
 
-    ' --- 6. Optionally disable auto-update on open ---
+    ' --- 7. Optionally disable auto-update on open ---
     If DISABLE_AUTO_UPDATE Then
         doc.UpdateStylesOnOpen = False
     End If
 
-    ' --- 7. Update fields (page numbers, refs, etc.) ---
+    ' --- 8. Update fields (page numbers, refs, etc.) ---
     currentStep = "Updating fields"
     doc.Fields.Update
 
-    ' --- 8. Summary ---
+    ' --- 9. Summary ---
     Dim elapsed As Single
     elapsed = Timer - startTime
 
@@ -104,6 +110,11 @@ Public Sub ApplyTemplateStyles()
     summary = summary & "Template:        " & tmplDoc.Name & vbCrLf
     summary = summary & "Backup:          " & backupPath & vbCrLf
     summary = summary & "Headers/footers: " & IIf(headersFootersCopied, "Copied", "Skipped (error or no sections)") & vbCrLf
+    If Len(templateFontName) > 0 Then
+        summary = summary & "Text font:       " & IIf(fontSetFromTemplate, "Set", "Skipped (error)") & " (""" & templateFontName & """)" & vbCrLf
+    Else
+        summary = summary & "Text font:       Skipped (template font not found)" & vbCrLf
+    End If
     summary = summary & "Text color:      " & IIf(textColorSetToBlack, "Set to black", "Skipped (error)") & vbCrLf
 
     summary = summary & "Table headers:   " & IIf(tableHeadersUpdated, "Updated", "Skipped (error)") & _
@@ -128,6 +139,64 @@ ErrHandler:
            "Your backup is safe at:" & vbCrLf & backupPath, _
            vbCritical, "Apply Template Styles - Error"
 End Sub
+
+
+' =============================================================================
+' Helper: set target text font family to the template's Normal style font.
+' =============================================================================
+Private Function SetBodyFontFromTemplate(targetDoc As Document, tmplDoc As Document, ByRef outFontName As String) As Boolean
+
+    On Error GoTo FontError
+
+    outFontName = ""
+
+    On Error Resume Next
+    outFontName = Trim$(tmplDoc.Styles(wdStyleNormal).Font.Name)
+    If Len(outFontName) = 0 Then
+        outFontName = Trim$(tmplDoc.Content.Font.Name)
+    End If
+    On Error GoTo FontError
+
+    If Len(outFontName) = 0 Then
+        SetBodyFontFromTemplate = False
+        Exit Function
+    End If
+
+    targetDoc.Content.Font.Name = outFontName
+
+    Dim storyTypes As Variant
+    storyTypes = Array( _
+        wdFootnotesStory, _
+        wdEndnotesStory, _
+        wdCommentsStory, _
+        wdTextFrameStory)
+
+    Dim storyType As Variant
+    Dim rng As Object
+
+    For Each storyType In storyTypes
+        Set rng = Nothing
+
+        On Error Resume Next
+        Set rng = targetDoc.StoryRanges(CLng(storyType))
+        If Err.Number <> 0 Then
+            Err.Clear
+            Set rng = Nothing
+        End If
+        On Error GoTo FontError
+
+        Do While Not rng Is Nothing
+            rng.Font.Name = outFontName
+            Set rng = rng.NextStoryRange
+        Loop
+    Next storyType
+
+    SetBodyFontFromTemplate = True
+    Exit Function
+
+FontError:
+    SetBodyFontFromTemplate = False
+End Function
 
 
 ' =============================================================================
