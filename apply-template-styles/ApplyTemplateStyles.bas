@@ -70,9 +70,13 @@ Public Sub ApplyTemplateStyles()
     End If
 
     ' --- 2. Create timestamped backup ---
-    backupPath = CreateBackup(doc)
+    Dim backupError As String
+    backupPath = CreateBackup(doc, backupError)
     If Len(backupPath) = 0 Then
-        MsgBox "Backup creation failed. Aborting to protect your work.", _
+        MsgBox "Backup creation failed. Aborting to protect your work." & vbCrLf & vbCrLf & _
+               "Reason: " & backupError & vbCrLf & _
+               "Doc path: " & doc.Path & vbCrLf & _
+               "Doc name: " & doc.Name, _
                vbCritical, "Apply Template Styles"
         Exit Sub
     End If
@@ -177,7 +181,7 @@ End Function
 ' Helper: Create a timestamped backup of the document
 ' Returns the backup file path, or "" on failure.
 ' =============================================================================
-Private Function CreateBackup(doc As Document) As String
+Private Function CreateBackup(doc As Document, ByRef outError As String) As String
 
     On Error GoTo BackupError
 
@@ -193,18 +197,14 @@ Private Function CreateBackup(doc As Document) As String
     timestamp = Format(Now, "yyyy-MM-dd_HHmmss")
     backupName = baseName & "_backup_" & timestamp & ext
 
-    ' Save current state first so the backup reflects latest edits
-    If Not doc.Saved Then
-        doc.Save
-    End If
-
-    ' Copy the file
-    FileCopy folder & doc.Name, folder & backupName
+    ' SaveCopyAs works even while the document is open (no file lock issues)
+    doc.SaveCopyAs folder & backupName
 
     CreateBackup = folder & backupName
     Exit Function
 
 BackupError:
+    outError = "Error " & Err.Number & ": " & Err.Description
     CreateBackup = ""
 End Function
 
