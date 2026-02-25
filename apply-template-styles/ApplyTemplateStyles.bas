@@ -209,15 +209,53 @@ Private Function ResolveTemplatePath() As String
         .AllowMultiSelect = False
 
         If .Show = -1 Then
-            ' Replace URL-encoded spaces (%20) with actual spaces
-            ' FileDialog can return URL-encoded paths that Word can't open
-            Dim rawPath As String
-            rawPath = .SelectedItems(1)
-            ResolveTemplatePath = Replace(rawPath, "%20", " ")
+            ResolveTemplatePath = DecodeFilePath(.SelectedItems(1))
         Else
             ResolveTemplatePath = ""  ' user cancelled
         End If
     End With
+
+End Function
+
+
+' =============================================================================
+' Helper: Decode URL-encoded file paths returned by FileDialog.
+' OneDrive/SharePoint synced folders can return URL-style paths with %20, %23,
+' etc. or even full https:// URLs. This converts them to local paths.
+' =============================================================================
+Private Function DecodeFilePath(ByVal rawPath As String) As String
+
+    Dim result As String
+    result = rawPath
+
+    ' Strip URL-encoded characters (%XX -> character)
+    Dim i As Long
+    Dim decoded As String
+    decoded = ""
+    i = 1
+    Do While i <= Len(result)
+        If Mid(result, i, 1) = "%" And i + 2 <= Len(result) Then
+            Dim hexVal As String
+            hexVal = Mid(result, i + 1, 2)
+            On Error Resume Next
+            decoded = decoded & Chr(CLng("&H" & hexVal))
+            If Err.Number <> 0 Then
+                decoded = decoded & Mid(result, i, 3)
+                Err.Clear
+            End If
+            On Error GoTo 0
+            i = i + 3
+        Else
+            decoded = decoded & Mid(result, i, 1)
+            i = i + 1
+        End If
+    Loop
+    result = decoded
+
+    ' Convert forward slashes to backslashes (URL-style paths)
+    result = Replace(result, "/", "\")
+
+    DecodeFilePath = result
 
 End Function
 
